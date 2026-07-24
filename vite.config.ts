@@ -8,6 +8,15 @@ const host = process.env.TAURI_DEV_HOST;
 export default defineConfig(async () => ({
   plugins: [react()],
 
+  // loro-crdt's default entry does a native `.wasm` ESM import that Vite can't
+  // load without extra plugins. The `base64` entry inlines the wasm into JS
+  // (no top-level await), so alias all `loro-crdt` imports to it.
+  resolve: {
+    alias: {
+      "loro-crdt": "loro-crdt/base64",
+    },
+  },
+
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //
   // 1. prevent Vite from obscuring rust errors
