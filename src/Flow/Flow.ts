@@ -1,6 +1,6 @@
-import { LoroDoc } from "loro-crdt";
+import { LoroDoc, UndoManager } from "loro-crdt";
 import type { LoroTree, LoroTreeNode, TreeID, Subscription } from "loro-crdt";
-import type { Argument } from "./Flow.tsx";
+import type { Argument } from "./types";
 
 /**
  * A debate "flow": the tree of arguments and the responses made to them across
@@ -14,9 +14,53 @@ import type { Argument } from "./Flow.tsx";
 
 const TREE_KEY = "flow";
 
+/**
+ * Commits closer together than this collapse into one undo step. Text writes
+ * are already throttled (see the editor), so continuous typing arrives as a
+ * commit every ~150ms; this merges a burst of typing — and the keystroke that
+ * created the card it went into — into a single undo.
+ */
+const UNDO_MERGE_MS = 500;
+
+/**
+ * Where a new argument goes, as a *value* rather than a method name — so a
+ * keybinding, a drag-and-drop drop target, or a paste can each compute a
+ * position and hand it to the same `add`.
+ *
+ * `root` anchors after the whole tree `near` belongs to (null = append at the
+ * end); `after` / `before` anchor against `id` itself among its siblings.
+ */
+export type Anchor =
+  | { under: string }
+  | { after: string }
+  | { before: string }
+  | { root: string | null };
+
+export interface ArgumentInit {
+  text?: string;
+  /**
+   * Which speech column the argument sits in. Defaults to the anchor's own
+   * column, or the next one for a response.
+   *
+   * This is a convenience, not an invariant: a card's column is the speech it
+   * was made in, which is independent of what it answers. A 2AR can respond to
+   * a 1NC argument.
+   */
+  speech?: number;
+}
+
+/** Resolved placement: which parent, which slot, and the column to default to. */
+interface Placement {
+  parent?: LoroTreeNode;
+  index?: number;
+  speech: number;
+}
+
 export class Flow {
   readonly doc: LoroDoc;
   private readonly tree: LoroTree;
+  private readonly history: UndoManager;
+  private txDepth = 0;
 
   constructor(doc: LoroDoc = new LoroDoc()) {
     this.doc = doc;
@@ -24,92 +68,164 @@ export class Flow {
     // Keep siblings in a deterministic, stable order and allow positional
     // moves (moveTo / createAt with an index).
     this.tree.enableFractionalIndex(0);
+    this.history = new UndoManager(doc, { mergeInterval: UNDO_MERGE_MS });
   }
 
   /**
-   * Add an argument. With no `parent` it's a root (an opening argument);
-   * otherwise it's a response to `parent`. Returns the new node's id.
+   * Undo the last local change. Returns false if there was nothing to undo.
+   *
+   * Only *your* edits are undone — a peer's concurrent changes are left in
+   * place, which is what you want when two people flow the same round.
    */
-  addArgument(text: string, speech: number, parent?: string): TreeID {
-    const node = parent
-      ? this.requireNode(parent).createNode()
-      : this.tree.createNode();
-    node.data.set("text", text);
-    node.data.set("speech", speech);
-    this.doc.commit();
+  undo(): boolean {
+    return this.history.undo();
+  }
+
+  redo(): boolean {
+    return this.history.redo();
+  }
+
+  canUndo(): boolean {
+    return this.history.canUndo();
+  }
+
+  canRedo(): boolean {
+    return this.history.canRedo();
+  }
+
+  /**
+   * Drop the undo history, making the current state the floor. Call after
+   * seeding or loading a snapshot so undo can't rewind into an empty flow.
+   */
+  clearHistory(): void {
+    this.history.clear();
+  }
+
+  /**
+   * Run `fn` as one atomic change: a single commit, so subscribers render once
+   * and undo treats it as one step. Nests safely — only the outermost `batch`
+   * commits. Returns whatever `fn` returns.
+   *
+   * Note that a throw still commits: Loro applies each op as it happens, so
+   * there is nothing to roll back, and leaving them uncommitted would only
+   * fold them into the next unrelated commit.
+   */
+  batch<T>(fn: () => T): T {
+    this.txDepth++;
+    try {
+      return fn();
+    } finally {
+      if (--this.txDepth === 0) this.doc.commit();
+    }
+  }
+
+  /** The one place an argument is created. Every add* wrapper routes here. */
+  add(anchor: Anchor, init: ArgumentInit = {}): TreeID {
+    const at = this.resolve(anchor);
+    const node = at.parent
+      ? at.parent.createNode(at.index)
+      : this.tree.createNode(undefined, at.index);
+    node.data.set("text", init.text ?? "");
+    node.data.set("speech", init.speech ?? at.speech);
+    this.commit();
     return node.id;
   }
 
   /**
-   * Add a response to an existing argument. Defaults the response into the
-   * next speech column unless `speech` is given explicitly.
+   * Add a response to an existing argument — a child, in the next speech
+   * column unless `speech` says otherwise.
    */
   addResponse(parent: string, text: string, speech?: number): TreeID {
-    const parentNode = this.requireNode(parent);
-    const col = speech ?? (parentNode.data.get("speech") as number) + 1;
-    return this.addArgument(text, col, parent);
+    return this.add({ under: parent }, { text, speech });
   }
 
   /**
-   * Add another response alongside `id` — a new node under the same parent, in
-   * the same speech column. If `id` is a root, the sibling is another root.
+   * Add another response alongside `id` — same parent, same speech column,
+   * positioned directly after it. If `id` is a root, the sibling is a root.
    */
   addSibling(id: string, text: string): TreeID {
+    return this.add({ after: id }, { text });
+  }
+
+  /**
+   * Start a new argument tree (a root) in `speech`, placed after the tree that
+   * `near` belongs to. Passing null appends it to the end.
+   *
+   * Unlike `addResponse`, the new argument answers nothing — it's a fresh
+   * top-level argument that can sit in any speech column, not just the 1AC.
+   */
+  addRoot(near: string | null, text: string, speech: number): TreeID {
+    return this.add({ root: near }, { text, speech });
+  }
+
+  /** Turn an `Anchor` into a concrete parent + slot + default column. */
+  private resolve(anchor: Anchor): Placement {
+    if ("under" in anchor) {
+      const parent = this.requireNode(anchor.under);
+      return { parent, speech: this.readSpeech(parent) + 1 };
+    }
+
+    if ("root" in anchor) {
+      const near = anchor.root;
+      let index: number | undefined;
+      if (near && this.has(near)) {
+        const rootId = this.rootIdOf(near);
+        const i = this.tree.roots().findIndex((r) => r.id === rootId);
+        if (i >= 0) index = i + 1;
+      }
+      return { index, speech: 0 };
+    }
+
+    // after / before: slot in among `id`'s siblings (or among the roots).
+    const id = "after" in anchor ? anchor.after : anchor.before;
     const node = this.requireNode(id);
-    const parent = node.parent();
-    const speech = (node.data.get("speech") as number) ?? 0;
-    const sibling = parent ? parent.createNode() : this.tree.createNode();
-    sibling.data.set("text", text);
-    sibling.data.set("speech", speech);
-    this.doc.commit();
-    return sibling.id;
+    const i = node.index();
+    const index =
+      i === undefined ? undefined : "after" in anchor ? i + 1 : i;
+    return { parent: node.parent(), index, speech: this.readSpeech(node) };
   }
 
   setText(id: string, text: string): void {
     this.requireNode(id).data.set("text", text);
-    this.doc.commit();
+    this.commit();
   }
 
   setSpeech(id: string, speech: number): void {
     this.requireNode(id).data.set("speech", speech);
-    this.doc.commit();
+    this.commit();
   }
 
   /**
    * Re-parent an argument (e.g. it was actually a response to a different
    * point). `newParent` undefined promotes it to a root. `index` positions it
    * among siblings. Cycles throw.
+   *
+   * `speech` is deliberately left alone: which speech an argument was made in
+   * doesn't change just because we corrected what it answers.
    */
   move(id: string, newParent?: string, index?: number): void {
     this.tree.move(id as TreeID, newParent as TreeID | undefined, index);
-    this.doc.commit();
+    this.commit();
   }
 
   /** Delete an argument and everything responding to it. */
   remove(id: string): void {
     this.tree.delete(id as TreeID);
-    this.doc.commit();
+    this.commit();
   }
 
-  /**
-   * Start a new argument tree (a root) in `speech`, placed directly after the
-   * tree that `near` belongs to. Passing null appends it to the end.
-   *
-   * Unlike `addResponse`, the new argument answers nothing — it's a fresh
-   * top-level argument that can sit in any speech column, not just the 1AC.
-   */
-  addRootAfter(near: string | null, text: string, speech: number): TreeID {
-    let index: number | undefined;
-    if (near && this.has(near)) {
-      const rootId = this.rootIdOf(near);
-      const i = this.tree.roots().findIndex((r) => r.id === rootId);
-      if (i >= 0) index = i + 1;
-    }
-    const node = this.tree.createNode(undefined, index);
-    node.data.set("text", text);
-    node.data.set("speech", speech);
-    this.doc.commit();
-    return node.id;
+  /** Commit unless we're inside a `batch` that will commit for us. */
+  private commit(): void {
+    if (this.txDepth === 0) this.doc.commit();
+  }
+
+  /** Which speech column an argument sits in. */
+  speechOf(id: string): number {
+    return this.readSpeech(this.requireNode(id));
+  }
+
+  private readSpeech(node: LoroTreeNode): number {
+    return (node.data.get("speech") as number) ?? 0;
   }
 
   /** Walk up to the root of the tree `id` belongs to (itself if a root). */

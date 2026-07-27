@@ -78,7 +78,6 @@
   align-items: start;
   /* White sheet: reserved/empty cells read as blank paper rather than dark
      gaps, while parents keep their natural height. */
-  background: var(--sheet);
 }
 
 .flow-header {
@@ -141,6 +140,6 @@
   background: var(--card-bg);
 }
 
-.flow-card__placeholder {
+.flow-card--placeholder {
   color: var(--placeholder);
 }

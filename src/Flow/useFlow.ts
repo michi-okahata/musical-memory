@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Flow } from "./Flow";
-import type { Argument } from "./Flow.tsx";
+import type { Argument } from "./types";
 
 /**
  * Create a `Flow` (once) and re-render whenever it changes — locally or from a
@@ -13,6 +13,9 @@ export function useFlow(seed?: (flow: Flow) => void): {
   const flow = useMemo(() => {
     const f = new Flow();
     seed?.(f);
+    // The document as loaded is the floor — undo shouldn't rewind into a blank
+    // flow the user never typed.
+    f.clearHistory();
     return f;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

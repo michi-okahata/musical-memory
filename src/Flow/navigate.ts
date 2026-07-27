@@ -1,4 +1,4 @@
-import type { Placed } from "./Flow.tsx";
+import type { Placed } from "./types";
 
 export type Motion = "h" | "j" | "k" | "l";
 
