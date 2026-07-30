@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { DebateFlow } from "./Flow/DebateFlow";
-import { layoutFlow } from "./Flow/layout";
-import type { Argument } from "./Flow/types";
-import { Flow } from "./Flow/Flow";
-import { useFlow } from "./Flow/useFlow";
-import { commands, initialEditorState, keyOf } from "./Flow/commands";
+import { DebateFlow } from "./flow/flow_view";
+import { layoutFlow } from "./flow/layout_engine";
+import type { Argument } from "./flow/types";
+import { Flow } from "./flow/flow_crdt";
+import { useFlow } from "./flow/flow_user";
+import { commands, initialEditorState, keyOf } from "./flow/commands";
 import "./App.css";
 
 // Policy debate speech order, 1AC … 2AR. The 2NC and 1NR are the consecutive
@@ -154,7 +154,6 @@ function App() {
 
   return (
     <main className="app">
-      <h1 className="app__title">Flow</h1>
       <p className="app__hint">
         <b>h j k l</b> move · <b>a</b> answer · <b>s</b> sibling · <b>i</b>/
         <b>Enter</b> edit · <b>O</b> new argument · <b>x</b> delete · <b>u</b>{" "}

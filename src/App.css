@@ -1,5 +1,5 @@
 :root {
-  font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
+  font-family: Arial, Helvetica, sans-serif;
   font-size: 16px;
   line-height: 24px;
   font-weight: 400;
@@ -22,25 +22,25 @@
      every one of them reappears as a visible gap. */
   --sheet: var(--card-bg);
   --card-fg: #0f0f0f;
-  --card-border: #d0d0d0;
   --card-hover: #f2f5ff;
-  --card-pad: 6px 10px;
-  --card-font-size: 14px;
+  --card-pad: 2px 2px;
+  --card-font-size: 12px;
   --card-line-height: 1.35;
-  --cursor: #3b6cff;
-  --cursor-ring: rgba(59, 108, 255, 0.35);
+  --cursor: #c300ff;
+  --cursor-ring: rgba(230, 0, 255, 0.5);
   --muted: #9a9a9a;
   --placeholder: #aaaaaa;
 }
 
+/* Skip for now
 /* Desktop apps should follow the OS theme. Only the tokens change; no
-   component needs to know which theme is active. */
+   component needs to know which theme is active.
 @media (prefers-color-scheme: dark) {
   :root {
     color: #f6f6f6;
     background-color: #2f2f2f;
 
-    /* only --card-bg is overridden; --sheet follows it automatically */
+    /* only --card-bg is overridden; --sheet follows it automatically
     --card-bg: #262626;
     --card-fg: #ececec;
     --card-border: #3d3d3d;
@@ -51,16 +51,11 @@
     --placeholder: #6b6b6b;
   }
 }
+*/
 
 /* ---- page ------------------------------------------------------------ */
 .app {
-  padding: 24px;
-  text-align: left;
-}
-
-.app__title {
-  font-size: 20px;
-  margin: 0 0 4px;
+  padding: 0px;
   text-align: left;
 }
 
@@ -74,7 +69,7 @@
 .flow-grid {
   display: grid;
   grid-auto-rows: min-content;
-  gap: 0;
+  gap: 4px;
   align-items: start;
   /* White sheet: reserved/empty cells read as blank paper rather than dark
      gaps, while parents keep their natural height. */
@@ -95,7 +90,7 @@
 /* ---- card ------------------------------------------------------------ */
 .flow-card {
   border: 1px solid var(--card-border);
-  border-radius: 0;
+  border-radius: 4px;
   padding: var(--card-pad);
   font-family: inherit;
   font-size: var(--card-font-size);

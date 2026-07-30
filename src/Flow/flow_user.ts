@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Flow } from "./Flow";
+import { Flow } from "./flow_crdt";
 import type { Argument } from "./types";
 
 /**

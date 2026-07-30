@@ -1,4 +1,4 @@
-import type { Flow } from "./Flow";
+import type { Flow } from "./flow_crdt";
 import type { Placed } from "./types";
 import { moveCursor, type Motion } from "./navigate";
 
