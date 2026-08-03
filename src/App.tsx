@@ -189,8 +189,9 @@ function App() {
   }, []);
 
   const renderArgument = (arg: Argument) => {
-    const isCursor = arg.id === cursorId;
-    const cardClass = `flow-card${isCursor ? " is-cursor" : ""}`;
+    // No cursor state on the card: the cell wears it, so that the number is
+    // inside the highlight — see the stylesheet.
+    const cardClass = "flow-card";
 
     if (arg.id === editingId) {
       return (

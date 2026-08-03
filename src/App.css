@@ -143,11 +143,10 @@ body {
   --zoom: 1;
   --card-font-size: calc(10px * var(--zoom));
   /* Tight, and asymmetric: the 3px on the left is the whole distance between
-     the rule and the first letter, and it is doing real work at 10px type. */
+     the rule and the first letter, and it is doing real work at 10px type.
+     The same 3px is what separates a number from the text it numbers. */
   --card-pad: 0 calc(2px * var(--zoom)) 0 calc(3px * var(--zoom));
-  /* One digit at card size. Reserved in every cell so a column's left edge is
-     straight whether or not its cards are numbered. */
-  --num-width: calc(8px * var(--zoom));
+  --card-gutter: calc(3px * var(--zoom));
   /* How tall the rectangle standing in for a card in a collapsed speech is. */
   --collapsed-mark: calc(11px * var(--zoom));
   --column-gap: calc(6px * var(--zoom));
@@ -318,8 +317,8 @@ body {
      It also makes the underline continuous across the sheet — the gutters used
      to break it into seven. */
   margin-inline: calc(-1 * var(--band-bleed));
-  padding: 1px 0 2px
-    calc(var(--band-bleed) + var(--num-width) + 3px * var(--zoom));
+  /* The 1px is the cards' rule, which the label clears rather than sits on. */
+  padding: 1px 0 2px calc(var(--band-bleed) + 1px + var(--card-gutter));
   color: var(--card-fg);
   /* Stays put on a long flow; the sheet scrolls under it. */
   position: sticky;
@@ -337,12 +336,15 @@ body {
   align-items: flex-end;
 }
 
-/* Parents keep their natural height instead of filling their row span. The
-   number sits in a fixed gutter to the left of the card's rule. */
+/* Parents keep their natural height instead of filling their row span.
+   The rule down the left belongs to the cell rather than to the card, which is
+   what puts the number inside it: number and text are two items in the same
+   box, and the rule opens the box. */
 .flow-cell {
   align-self: start;
   display: flex;
   align-items: flex-start;
+  border-left: 1px solid var(--card-border);
   /* Keep the cursor off the edges: the sheet starts scrolling once the card
      gets within a quarter of the window of the top or bottom, so you can
      always see what you're flowing into.
@@ -380,7 +382,7 @@ body {
 /* The cursor inside a speech that's out of focus: the rectangle is all there
    is to colour, so it takes the accent whole. Cheap, and it is the only way to
    see where you are while the cursor is somewhere you aren't reading. */
-.flow-cell.is-collapsed .flow-card.is-cursor {
+.flow-cell.is-collapsed.is-cursor .flow-card {
   background: var(--cursor);
 }
 
@@ -397,12 +399,20 @@ body {
   overflow: hidden;
 }
 
+/* The number reads as the first thing in the card rather than as a column of
+   its own: it takes the width of its digits and no more, and the text starts a
+   gutter after it. So it sits exactly where the first word would have, and a
+   two-digit number pushes the text along instead of overflowing a box sized
+   for one digit.
+   The text still hangs — the card is the flex item beside this one, so a
+   wrapped line returns to the text, not under the number, which is what a
+   numbered list does. */
 .flow-num {
-  flex: 0 0 var(--num-width);
+  flex: none;
+  padding-left: var(--card-gutter);
   font-size: var(--card-font-size);
   line-height: var(--card-line-height);
   color: var(--muted);
-  text-align: right;
   font-variant-numeric: tabular-nums;
   user-select: none;
 }
@@ -420,10 +430,10 @@ body {
 
 /* ---- card ------------------------------------------------------------ */
 .flow-card {
-  /* `border-left` alone would leave a textarea's UA border on the other three
-     sides, and the edit box would sit a couple of pixels off the card. */
+  /* The rule is the cell's (see .flow-cell). Zeroed here because a textarea
+     comes with a UA border, and the edit box would sit a couple of pixels off
+     the card. */
   border: 0;
-  border-left: 1px solid var(--card-border);
   padding: var(--card-pad);
   font-family: inherit;
   font-size: var(--card-font-size);
@@ -448,19 +458,20 @@ body {
   background: var(--card-hover);
 }
 
-/* The cursor: the card's own left rule going accent-coloured, a wash across
-   the card, and a hairline around it. Three quiet signals rather than one loud
-   one — the wash is what you find from across the sheet, the rule is what tells
-   you the exact card, and neither of them changes the card's size, so moving
-   the cursor doesn't move the flow. */
-.flow-card.is-cursor {
+/* The cursor: the left rule going accent-coloured, a wash across the card, and
+   a hairline around it. Three quiet signals rather than one loud one — the wash
+   is what you find from across the sheet, the rule is what tells you the exact
+   card, and none of them changes the card's size, so moving the cursor doesn't
+   move the flow.
+   Worn by the cell, not the card, so the number is inside the highlight — it is
+   part of the card now — and so the three layers of the editor, which all carry
+   the card's class, can't each stack another copy of the wash. */
+.flow-cell.is-cursor {
   border-color: var(--cursor);
   background: var(--cursor-bg);
   box-shadow: 0 0 0 1px var(--cursor-ring);
   /* Tight gaps mean neighbours would clip the ring — lift it above them. A
-     flex item takes z-index without being positioned, and it must stay
-     unpositioned: the editor stacks its layers with `position: absolute`, and
-     a `position: relative` here would outrank that on specificity. */
+     grid item takes z-index without being positioned. */
   z-index: 1;
 }
 
@@ -480,18 +491,6 @@ body {
   position: relative;
   flex: 1 1 auto;
   min-width: 0;
-  /* Same lift as a cursored card: this only ever renders on the cursor. Which
-     is also why the cursor's wash and hairline are drawn here, once, instead of
-     by the layers: all three of them carry the cursor class, and each would
-     otherwise stack another copy of the wash on the last. */
-  z-index: 1;
-  background: var(--cursor-bg);
-  box-shadow: 0 0 0 1px var(--cursor-ring);
-}
-
-.flow-editor > .flow-card.is-cursor {
-  background: none;
-  box-shadow: none;
 }
 
 .flow-editor__sizer {
@@ -535,4 +534,13 @@ body {
 
 .flow-card--edit:hover {
   background: transparent;
+}
+
+/* The edit box is inside a cell already showing the cursor three ways — the
+   rule, the wash, the hairline. A focus ring is a fourth saying the same thing,
+   and the loudest of them. The `outline: none` above can't stop it on its own:
+   the textarea is the only `.flow-card` anything can focus, so
+   `.flow-card:focus-visible` always applies, and it wins on specificity. */
+.flow-card--edit:focus-visible {
+  outline: none;
 }

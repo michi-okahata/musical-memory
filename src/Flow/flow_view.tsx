@@ -220,7 +220,11 @@ export function DebateFlow({
             // are shared, so it would drag the speech you're working in down
             // the page with it. The card element itself stays — clicking a
             // rectangle still puts the cursor there, which re-focuses it.
-            className={`flow-cell${inFocus(p.col, focus) ? "" : " is-collapsed"}`}
+            // The cursor is worn by the cell rather than by the card, so that
+            // the number is inside the highlight — see the stylesheet.
+            className={`flow-cell${inFocus(p.col, focus) ? "" : " is-collapsed"}${
+              p.id === cursorId ? " is-cursor" : ""
+            }`}
             // Placement comes from `layoutFlow` — inherently per-node, so it
             // cannot live in a stylesheet.
             style={{
@@ -228,10 +232,10 @@ export function DebateFlow({
               gridRow: `${p.row + 1 + headerOffset} / span ${p.span}`,
             }}
           >
-            {/* The gutter is always drawn, empty or not: a numbered card and
-                an unnumbered one in the same column must start at the same
-                left edge. */}
-            <span className="flow-num">{p.index ?? ""}</span>
+            {/* Only when there is one to draw. The number is text now — it
+                takes the room its digits need and no more — so an unnumbered
+                card simply starts with its first word. */}
+            {p.index !== null && <span className="flow-num">{p.index}</span>}
             {renderArgument ? renderArgument(arg) : <DefaultCard text={arg.text} />}
           </div>
         );
