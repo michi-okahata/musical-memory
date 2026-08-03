@@ -456,12 +456,20 @@ export const commands: Record<string, Command> = {
   "#": cycleMark, // how the selection is marked off: 1. / a. / nothing
   J: moveSelection("down"), // shift the selection past its next sibling…
   K: moveSelection("up"), // …or its previous one
-  // Zoom, on the keys it is drawn on. Deliberately not the platform chord:
-  // Cmd +/- is the browser's own zoom and can't be taken off it, so binding
-  // them here would scale the sheet twice over.
-  "+": zoomBy(ZOOM_STEP),
-  "_": zoomBy(1 / ZOOM_STEP),
-  "=": resetZoom,
+  // Zoom, on the platform chord — this is a desktop app, and Cmd +/- is where
+  // a Mac user's hand already goes. It was on the bare keys because Cmd +/- is
+  // the *browser's* zoom and can't be taken off it, but that is only true of
+  // the dev preview: the shipped WKWebView binds nothing to it, so the chord
+  // is ours. (Run the sheet in a browser and the page zooms under the flow
+  // instead — a dev artifact, not the app.)
+  //
+  // Both faces of each key, since the shift state of `=/+` and `-/_` is not
+  // something anyone thinks about while reaching for zoom.
+  "M-=": zoomBy(ZOOM_STEP),
+  "M-+": zoomBy(ZOOM_STEP),
+  "M--": zoomBy(1 / ZOOM_STEP),
+  "M-_": zoomBy(1 / ZOOM_STEP),
+  "M-0": resetZoom, // "actual size", where every other desktop app keeps it
   x: remove,
   // Undo: vim's u / Ctrl-r, plus the platform chord this is a desktop app on.
   u: history("undo"),

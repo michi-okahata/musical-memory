@@ -64,7 +64,7 @@ const HINTS: [key: string, does: string][] = [
   ["v", "select"],
   ["#", "1./a./–"],
   ["J/K", "move sel"],
-  ["+/-", "zoom"],
+  ["⌘+/-", "zoom"],
   ["x", "delete"],
   ["u", "undo"],
 ];
@@ -351,7 +351,7 @@ function App() {
         {/* Only once it's been touched: at 1 the sheet is at its authored size,
             and a permanent "100%" would be one more thing on the line saying
             nothing. Shown at all because a pinch can leave you at a scale you
-            didn't choose deliberately, and `=` is the way back. */}
+            didn't choose deliberately, and ⌘0 is the way back. */}
         {zoom !== 1 && (
           <span className="app__mode">{Math.round(zoom * 100)}%</span>
         )}
