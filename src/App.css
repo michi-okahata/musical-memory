@@ -148,7 +148,7 @@ body {
   --card-pad: 0 calc(2px * var(--zoom)) 0 calc(3px * var(--zoom));
   --card-gutter: calc(3px * var(--zoom));
   /* How tall the rectangle standing in for a card in a collapsed speech is. */
-  --collapsed-mark: calc(11px * var(--zoom));
+  --collapsed-mark: calc(14px * var(--zoom));
   --column-gap: calc(6px * var(--zoom));
   /* How far a side band reaches past its own column, into the gutter: exactly
      half, so neighbouring bands meet in the middle of it and the gutter belongs

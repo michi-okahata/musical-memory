@@ -29,20 +29,28 @@ function computeSpans(roots: Argument[]): Map<string, number> {
 }
 
 /**
- * What to write beside each of `siblings`, keyed by id: position within its
- * *run* — the maximal stretch of same-speech neighbours marked alike — or
- * null for a run of one, where a bare "1." would be noise.
+ * What to write beside each of `siblings`, keyed by id: its place among the
+ * same-speech neighbours marked the same way, or null when it is the only card
+ * in the column carrying that mark and a bare "1." would be noise.
  *
- * A column no longer numbers as a single block. Two siblings can be marked
- * differently (a card `#`-cycled away from its neighbours), and a card not
- * sharing a parent with anything beside it is exactly as valid a member of a
- * run as one that does — the "group" a mark applies to was retired along with
- * the `#` binding it used to mean; what is left is only this: a contiguous
- * same-speech, same-mark stretch counts together, and anything else doesn't.
+ * Counted per mark rather than per contiguous run, which is what makes a list
+ * survive being interrupted:
+ *
+ *     1. permutation                 num   → 1
+ *     2. link turn                   num   → 2
+ *     a. and it's non-unique         alpha → a
+ *     b. …their own ev says so       alpha → b
+ *     3. no impact                   num   → 3   ← not 1
+ *
+ * A lettered aside in the middle of a numbered list is a digression, not the
+ * end of the list — the numbering picks up where it left off, the way it would
+ * on paper. The two sequences advance independently, so neither can disturb
+ * the other however they interleave, and an unmarked card in the middle of
+ * either passes through without consuming a place in it.
  *
  * Grouped by speech first because siblings mix every column together in
- * document order — the run has to be found inside one column's slice of that
- * order, not across it.
+ * document order — a card's neighbours are its column's slice of that order,
+ * not the whole of it.
  */
 function markIndices(siblings: Argument[]): Map<string, number | null> {
   const bySpeech = new Map<number, Argument[]>();
@@ -54,15 +62,14 @@ function markIndices(siblings: Argument[]): Map<string, number | null> {
 
   const out = new Map<string, number | null>();
   for (const column of bySpeech.values()) {
-    let i = 0;
-    while (i < column.length) {
-      let j = i;
-      while (j < column.length && column[j].mark === column[i].mark) j++;
-      const runLength = j - i;
-      for (let k = i; k < j; k++) {
-        out.set(column[k].id, runLength > 1 ? k - i + 1 : null);
-      }
-      i = j;
+    const total = new Map<Mark, number>();
+    for (const c of column) total.set(c.mark, (total.get(c.mark) ?? 0) + 1);
+
+    const seen = new Map<Mark, number>();
+    for (const c of column) {
+      const n = (seen.get(c.mark) ?? 0) + 1;
+      seen.set(c.mark, n);
+      out.set(c.id, total.get(c.mark)! > 1 ? n : null);
     }
   }
   return out;
@@ -106,10 +113,10 @@ export function layoutFlow(roots: Argument[]): Placed[] {
 }
 
 /**
- * What to write beside a card: its place in its group, in the notation the
- * group is marked with. Empty for a card that isn't marked — either because
- * its group says not to, or because `layoutFlow` found nothing to count it
- * against (a group of one, where a bare "1." is just noise).
+ * What to write beside a card: its place among the cards marked as it is, in
+ * the notation it is marked with. Empty when the card carries no mark, or when
+ * `layoutFlow` found nothing to count it against — the only one of its kind in
+ * the column, where a bare "1." is just noise.
  *
  * Letters run a, b, … z, aa, ab — the spreadsheet column sequence. A flow will
  * never get there, but a rule that runs out is worse than one that doesn't.

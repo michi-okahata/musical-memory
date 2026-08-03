@@ -13,24 +13,25 @@ export interface Argument {
   /** The speech column it sits in: 0 = first speech, 1 = next, … */
   speech: number;
   text: string;
-  /** How the cards in its group are numbered. See `Mark`. */
+  /** How it is marked off from its neighbours. See `Mark`. */
   mark: Mark;
   children: Argument[];
 }
 
 /**
- * How a run of arguments is marked off: "1. 2. 3.", "a. b. c.", or not at all.
+ * How an argument is marked off: "1. 2. 3.", "a. b. c.", or not at all.
  *
- * A property of the *group* — the siblings sharing a parent and a speech column
- * — rather than of one card, because it is a fact about a list and not about
- * any member of it: "1, b, 3" is not a thing anyone means. It is nonetheless
- * stored on each card, since a group is a relationship and has nowhere of its
- * own to keep anything; the flow keeps the group's cards in agreement, so a
- * card's own mark is always the group's.
+ * Carried by each card rather than by any list object, because a column holds
+ * no single list to put it on: a numbered run, a lettered aside and a few
+ * unmarked points can all sit in one speech, interleaved, answering different
+ * arguments. What counts as a list is worked out at layout time instead —
+ * everything in a column marked the same way is one sequence, so the cards
+ * that share a mark are the list, and interrupting them doesn't end it (see
+ * `markIndices`).
  */
 export type Mark = "num" | "alpha" | "none";
 
-/** What the cards of a brand-new group are marked with. */
+/** What a card is marked with when nothing nearby suggests otherwise. */
 export const DEFAULT_MARK: Mark = "num";
 
 /** An argument's slot in the grid: which column, which row, how many rows tall. */
@@ -42,9 +43,11 @@ export interface Placed {
   /** How far down the chain of responses it is; 0 for a top-level argument. */
   depth: number;
   /**
-   * The number written beside the card — its place among the responses sharing
-   * both its parent and its speech column, counting from 1. Null when it is
-   * the only one in that group, where a bare "1." is just noise.
+   * Where the card comes in its own sequence — among the siblings sharing its
+   * speech column *and* its mark, counting from 1, so an interruption marked
+   * differently doesn't reset it. Null when nothing else in the column is
+   * marked as it is, and a bare "1." would be noise. `markerOf` turns it into
+   * the "1" or the "a" that gets drawn.
    */
   index: number | null;
 }
