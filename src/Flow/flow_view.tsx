@@ -1,5 +1,5 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { layoutFlow, measureRows } from "./layout_engine";
+import { layoutFlow, markerOf, measureRows } from "./layout_engine";
 import { FOCUS_REACH, type Argument, type Placed, type Speech } from "./types";
 
 /**
@@ -207,6 +207,7 @@ export function DebateFlow({
 
       {placed.map((p) => {
         const arg = byId.get(p.id)!;
+        const marker = markerOf(p.index, arg.mark);
         return (
           <div
             key={p.id}
@@ -232,10 +233,10 @@ export function DebateFlow({
               gridRow: `${p.row + 1 + headerOffset} / span ${p.span}`,
             }}
           >
-            {/* Only when there is one to draw. The number is text now — it
-                takes the room its digits need and no more — so an unnumbered
-                card simply starts with its first word. */}
-            {p.index !== null && <span className="flow-num">{p.index}</span>}
+            {/* Only when there is one to draw. The mark is text now — it takes
+                the room its characters need and no more — so an unmarked card
+                simply starts with its first word. */}
+            {marker && <span className="flow-num">{marker}</span>}
             {renderArgument ? renderArgument(arg) : <DefaultCard text={arg.text} />}
           </div>
         );

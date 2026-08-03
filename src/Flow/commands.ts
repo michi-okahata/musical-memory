@@ -1,5 +1,5 @@
 import type { Flow } from "./flow_crdt";
-import { FOCUS_REACH, type Placed, type Speech } from "./types";
+import { FOCUS_REACH, type Mark, type Placed, type Speech } from "./types";
 import { moveCursor, moveToColumn, type Motion } from "./navigate";
 
 /**
@@ -187,6 +187,38 @@ const newRoot =
     return editing(state, flow.addRoot(state.cursorId, "", speech, where));
   };
 
+/**
+ * The order `#` walks the marks in, and the whole of the design.
+ *
+ * The obvious reading of "a new argument numbered, lettered, or plain" is three
+ * more creating keys — but there are five creating keys already (`a`, `o`, `O`,
+ * `n`, `N`), and three marks apiece is fifteen bindings for a keymap that fits
+ * on the status line today. It also asks the wrong question at the wrong time:
+ * you are making a card, and it wants to know about the *list*.
+ *
+ * So the mark is not chosen at creation at all. A new card takes the mark of
+ * the group it lands in (see `Flow.add`), which is right nearly always — the
+ * second answer to an argument is marked like the first — and `#` re-marks the
+ * group when it isn't. One key, no mode, and it composes with every way of
+ * making a card rather than doubling each of them. Helix earns its keyboard the
+ * same way: operators on a selection, not a verb per noun.
+ */
+const MARKS: Mark[] = ["num", "alpha", "none"];
+
+/**
+ * Re-mark the cursor's group: 1. → a. → nothing → 1.
+ *
+ * Cycling rather than three keys because there are three states and a glance at
+ * the sheet says which one you are in. The exception is a group of one, which
+ * draws no mark whatever it is set to — the status line names it there.
+ */
+const cycleMark: Command = ({ state, flow }) => {
+  if (!state.cursorId || !flow.has(state.cursorId)) return state;
+  const at = MARKS.indexOf(flow.markOf(state.cursorId));
+  flow.setMark(state.cursorId, MARKS[(at + 1) % MARKS.length]);
+  return { ...state, count: null };
+};
+
 /** Delete the cursor's card and its subtree; land on its parent. */
 const remove: Command = ({ state, flow }) => {
   if (!state.cursorId) return state;
@@ -302,6 +334,7 @@ export const commands: Record<string, Command> = {
   n: newRoot("after"), // a new argument tree, clear of this one
   N: newRoot("before"), // …above it: the overview case
   f: toggleFocus, // narrow the speeches you aren't in
+  "#": cycleMark, // how this run of arguments is marked off: 1. / a. / nothing
   // Zoom, on the keys it is drawn on. Deliberately not the platform chord:
   // Cmd +/- is the browser's own zoom and can't be taken off it, so binding
   // them here would scale the sheet twice over.

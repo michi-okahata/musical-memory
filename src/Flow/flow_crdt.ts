@@ -1,6 +1,6 @@
 import { LoroDoc, UndoManager } from "loro-crdt";
 import type { LoroTree, LoroTreeNode, TreeID, Subscription } from "loro-crdt";
-import type { Argument } from "./types";
+import { DEFAULT_MARK, type Argument, type Mark } from "./types";
 
 /**
  * A debate "flow": the tree of arguments and the responses made to them across
@@ -49,6 +49,12 @@ export interface ArgumentInit {
    * a 1NC argument.
    */
   speech?: number;
+  /**
+   * How the card is marked off. Defaults to whatever the group it lands in is
+   * already marked with, so the choice is made once per group and every card
+   * added to it afterwards agrees without being asked.
+   */
+  mark?: Mark;
 }
 
 /** Resolved placement: which parent, which slot, and the column to default to. */
@@ -65,8 +71,9 @@ export class Flow {
   private txDepth = 0;
   /** Reads the editor's cursor, once `trackCursor` has been called. */
   private readCursor: (() => string | null) | null = null;
-  /** The cursor's whereabouts as of the mutation being committed. */
-  private mark = "";
+  /** The cursor's whereabouts as of the mutation being committed. Nothing to
+      do with a card's `Mark`, which is how its group is numbered. */
+  private undoMark = "";
   /** The mark carried by the step just popped off the undo/redo stack. */
   private popped = "";
 
@@ -89,7 +96,7 @@ export class Flow {
     this.readCursor = read;
     // Loro's step metadata is a plain `Value`; a string keeps it simple, and
     // "" stands in for "we don't know where the cursor was".
-    this.history.setOnPush(() => ({ value: this.mark, cursors: [] }));
+    this.history.setOnPush(() => ({ value: this.undoMark, cursors: [] }));
     this.history.setOnPop((_isUndo, meta) => {
       this.popped = typeof meta.value === "string" ? meta.value : "";
     });
@@ -110,7 +117,7 @@ export class Flow {
    */
   private markCursor(): void {
     const id = this.readCursor?.() ?? null;
-    this.mark = id && this.has(id) ? `${id}#${this.pathOf(id).join(",")}` : "";
+    this.undoMark = id && this.has(id) ? `${id}#${this.pathOf(id).join(",")}` : "";
   }
 
   /**
@@ -220,13 +227,56 @@ export class Flow {
   add(anchor: Anchor, init: ArgumentInit = {}): TreeID {
     this.markCursor();
     const at = this.resolve(anchor);
+    const speech = init.speech ?? at.speech;
+    // Read the group before joining it: a card is marked like the run it lands
+    // in, so the choice is made once and inherited from then on. Doing it here
+    // rather than in the keymap means every way of making a card — a binding,
+    // a paste, a drop — inherits alike.
+    const mark = init.mark ?? this.groupMark(at.parent, speech);
     const node = at.parent
       ? at.parent.createNode(at.index)
       : this.tree.createNode(undefined, at.index);
     node.data.set("text", init.text ?? "");
-    node.data.set("speech", init.speech ?? at.speech);
+    node.data.set("speech", speech);
+    node.data.set("mark", mark);
     this.commit();
     return node.id;
+  }
+
+  /**
+   * The cards of one group: the siblings under `parent` — or the roots, when
+   * there is none — that sit in the same speech column. The unit a mark, and
+   * the numbering it draws, belong to.
+   */
+  private groupNodes(parent: LoroTreeNode | undefined, speech: number) {
+    const siblings = parent ? (parent.children() ?? []) : this.tree.roots();
+    return siblings.filter((n) => this.readSpeech(n) === speech);
+  }
+
+  /** What a group is marked with, from its first card; the default if empty. */
+  private groupMark(parent: LoroTreeNode | undefined, speech: number): Mark {
+    const first = this.groupNodes(parent, speech)[0];
+    return first ? readMark(first) : DEFAULT_MARK;
+  }
+
+  /** How the card's group is marked. */
+  markOf(id: string): Mark {
+    return readMark(this.requireNode(id));
+  }
+
+  /**
+   * Mark the cursor's whole group, not just the card it was asked about — the
+   * mark is a fact about the run and every card in it has to agree, or the
+   * numbering reads as "1, b, 3". One commit, so it is one undo step.
+   */
+  setMark(id: string, mark: Mark): void {
+    this.markCursor();
+    const node = this.requireNode(id);
+    this.batch(() => {
+      for (const n of this.groupNodes(node.parent(), this.readSpeech(node))) {
+        n.data.set("mark", mark);
+      }
+    });
   }
 
   /**
@@ -400,12 +450,23 @@ export class Flow {
   }
 }
 
+/**
+ * How a node's group is numbered. Anything unrecognised — an older document
+ * written before marks existed, a peer on a newer version — reads as the
+ * default, so a flow always renders.
+ */
+function readMark(node: LoroTreeNode): Mark {
+  const m = node.data.get("mark");
+  return m === "alpha" || m === "none" || m === "num" ? m : DEFAULT_MARK;
+}
+
 /** Convert a live Loro tree node into the immutable view `Argument`. */
 function toArgument(node: LoroTreeNode): Argument {
   return {
     id: node.id,
     text: (node.data.get("text") as string) ?? "",
     speech: (node.data.get("speech") as number) ?? 0,
+    mark: readMark(node),
     children: (node.children() ?? []).map(toArgument),
   };
 }

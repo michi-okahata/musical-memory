@@ -60,6 +60,7 @@ const HINTS: [key: string, does: string][] = [
   ["i", "edit"],
   ["Tab", "complete"],
   ["f", "focus"],
+  ["#", "1./a./–"],
   ["+/-", "zoom"],
   ["x", "delete"],
   ["u", "undo"],
@@ -94,6 +95,19 @@ function App() {
   // Rebuilt as the flow changes, so completions pick up the round's own
   // vocabulary as it's written.
   const dictionary = useMemo(() => buildDictionary(textsOf(roots)), [roots]);
+
+  // How the cursor's group is marked, for the status line — but only when it
+  // isn't the default. A group of one draws no mark at all (a bare "1." is
+  // noise), so without this `#` would look like a key that does nothing on the
+  // first card of every group, which is exactly where you press it.
+  //
+  // Read from the flow rather than from `roots`, but keyed on `roots`: the mark
+  // is written to the document, so the read is only stale until the commit that
+  // changed it lands — which is the same tick that replaces `roots`.
+  const mark = useMemo(
+    () => (cursorId && flow.has(cursorId) ? flow.markOf(cursorId) : "num"),
+    [roots, cursorId, flow],
+  );
 
   // Undo restores the cursor to wherever the change was made, which means the
   // flow has to be able to read the cursor as each change commits.
@@ -295,6 +309,13 @@ function App() {
               </span>
             ))}
           </span>
+        )}
+        {/* Only when the cursor's group isn't marked the ordinary way, on the
+            same terms as the zoom below: the default says nothing worth a chip,
+            and the two that aren't the default are invisible on a group that
+            has only one card so far. */}
+        {mark !== "num" && (
+          <span className="app__mode">{mark === "alpha" ? "a. b. c." : "no marks"}</span>
         )}
         {/* Naming the pinned speech matters now that it doesn't follow the
             cursor — it's the difference between "focus is on" and knowing

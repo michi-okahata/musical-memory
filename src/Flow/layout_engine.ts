@@ -1,4 +1,4 @@
-import type { Argument, Placed } from "./types";
+import type { Argument, Mark, Placed } from "./types";
 
 /**
  * Turning a flow into grid coordinates. All pure functions over plain data —
@@ -76,6 +76,29 @@ export function layoutFlow(roots: Argument[]): Placed[] {
     nextRow += spans.get(root.id)!;
   }
   return placed;
+}
+
+/**
+ * What to write beside a card: its place in its group, in the notation the
+ * group is marked with. Empty for a card that isn't marked — either because
+ * its group says not to, or because `layoutFlow` found nothing to count it
+ * against (a group of one, where a bare "1." is just noise).
+ *
+ * Letters run a, b, … z, aa, ab — the spreadsheet column sequence. A flow will
+ * never get there, but a rule that runs out is worse than one that doesn't.
+ */
+export function markerOf(index: number | null, mark: Mark): string {
+  if (index === null || mark === "none") return "";
+  if (mark === "num") return String(index);
+
+  let n = index;
+  let out = "";
+  while (n > 0) {
+    n--;
+    out = String.fromCharCode(97 + (n % 26)) + out;
+    n = Math.floor(n / 26);
+  }
+  return out;
 }
 
 /**

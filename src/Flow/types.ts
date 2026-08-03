@@ -13,8 +13,25 @@ export interface Argument {
   /** The speech column it sits in: 0 = first speech, 1 = next, … */
   speech: number;
   text: string;
+  /** How the cards in its group are numbered. See `Mark`. */
+  mark: Mark;
   children: Argument[];
 }
+
+/**
+ * How a run of arguments is marked off: "1. 2. 3.", "a. b. c.", or not at all.
+ *
+ * A property of the *group* — the siblings sharing a parent and a speech column
+ * — rather than of one card, because it is a fact about a list and not about
+ * any member of it: "1, b, 3" is not a thing anyone means. It is nonetheless
+ * stored on each card, since a group is a relationship and has nowhere of its
+ * own to keep anything; the flow keeps the group's cards in agreement, so a
+ * card's own mark is always the group's.
+ */
+export type Mark = "num" | "alpha" | "none";
+
+/** What the cards of a brand-new group are marked with. */
+export const DEFAULT_MARK: Mark = "num";
 
 /** An argument's slot in the grid: which column, which row, how many rows tall. */
 export interface Placed {
