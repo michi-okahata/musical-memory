@@ -5,16 +5,16 @@ export type Motion = "h" | "j" | "k" | "l";
 /**
  * Vim-style spatial navigation over the laid-out flow grid.
  *
- * - `j` / `k`: next / previous card in the same column (by row).
+ * - `j` / `k`: next / previous argument in the same column (by row).
  * - `h` / `l`: jump to the nearest non-empty column left / right, landing on
- *   the card whose vertical span is closest to the current one.
+ *   the argument whose vertical span is closest to the current one.
  *
  * Returns the id to move the cursor to (unchanged if there's nowhere to go).
  */
 
 const mid = (p: Placed) => p.row + p.span / 2;
 
-/** The card in `col` sitting closest, vertically, to `to`. */
+/** The argument in `col` sitting closest, vertically, to `to`. */
 function nearestInColumn(
   placed: Placed[],
   col: number,
@@ -39,9 +39,9 @@ export function columnOrder(placed: Placed[], col: number): Placed[] {
 
 /**
  * Everything from `anchorId` to `cursorId`, inclusive, in column order — the
- * cards a visual selection covers. Empty whenever that's not a well-formed
- * range: either id missing (a card the selection pointed to got deleted out
- * from under it), or the two no longer share a column.
+ * arguments a visual selection covers. Empty whenever that's not a
+ * well-formed range: either id missing (an argument the selection pointed to
+ * got deleted out from under it), or the two no longer share a column.
  *
  * That second case is normal, not a bug to guard against: `h`/`l` jump columns
  * outright, so the keymap drops the selection the moment this goes empty (see
@@ -67,7 +67,7 @@ export function selectionRange(
 
 /**
  * Move the cursor `count` steps. Stops early where the motion runs out of grid
- * rather than wrapping — `10j` in a short column lands on its last card.
+ * rather than wrapping — `10j` in a short column lands on its last argument.
  */
 export function moveCursor(
   placed: Placed[],
@@ -93,7 +93,7 @@ function step(
 
   const cur = placed.find((p) => p.id === currentId);
   if (!cur) {
-    // No cursor yet: land on the top-left-most card.
+    // No cursor yet: land on the top-left-most argument.
     return [...placed].sort((a, b) => a.col - b.col || a.row - b.row)[0].id;
   }
 
@@ -104,7 +104,7 @@ function step(
     return next?.id ?? cur.id;
   }
 
-  // h / l: scan outward to the nearest column that actually has cards.
+  // h / l: scan outward to the nearest column that actually has arguments.
   const columns = [...new Set(placed.map((p) => p.col))].sort((a, b) => a - b);
   const candidates =
     motion === "l"

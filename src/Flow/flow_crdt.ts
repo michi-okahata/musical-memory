@@ -18,7 +18,7 @@ const TREE_KEY = "flow";
  * Commits closer together than this collapse into one undo step. Text writes
  * are already throttled (see the editor), so continuous typing arrives as a
  * commit every ~150ms; this merges a burst of typing — and the keystroke that
- * created the card it went into — into a single undo.
+ * created the argument it went into — into a single undo.
  */
 const UNDO_MERGE_MS = 500;
 
@@ -44,15 +44,15 @@ export interface ArgumentInit {
    * Which speech column the argument sits in. Defaults to the anchor's own
    * column, or the next one for a response.
    *
-   * This is a convenience, not an invariant: a card's column is the speech it
-   * was made in, which is independent of what it answers. A 2AR can respond to
-   * a 1NC argument.
+   * This is a convenience, not an invariant: an argument's column is the
+   * speech it was made in, which is independent of what it answers. A 2AR can
+   * respond to a 1NC argument.
    */
   speech?: number;
   /**
-   * How the card is marked off. Defaults to whatever the group it lands in is
-   * already marked with, so the choice is made once per group and every card
-   * added to it afterwards agrees without being asked.
+   * How the argument is marked off. Defaults to whatever the group it lands in
+   * is already marked with, so the choice is made once per group and every
+   * argument added to it afterwards agrees without being asked.
    */
   mark?: Mark;
 }
@@ -72,7 +72,7 @@ export class Flow {
   /** Reads the editor's cursor, once `trackCursor` has been called. */
   private readCursor: (() => string | null) | null = null;
   /** The cursor's whereabouts as of the mutation being committed. Nothing to
-      do with a card's `Mark`, which is how its group is numbered. */
+      do with an argument's `Mark`, which is how its group is numbered. */
   private undoMark = "";
   /** The mark carried by the step just popped off the undo/redo stack. */
   private popped = "";
@@ -88,7 +88,7 @@ export class Flow {
 
   /**
    * Remember where the cursor is with every change, so undo can put it back.
-   * `read` is the editor's answer to "which card is the cursor on?".
+   * `read` is the editor's answer to "which argument is the cursor on?".
    *
    * Returns a function that stops the tracking.
    */
@@ -111,9 +111,9 @@ export class Flow {
    * Note where the cursor is *before* a mutation touches the tree.
    *
    * The timing is the whole point. Loro pushes its undo step when the change
-   * commits, by which time a deletion has already taken the cursor's card with
-   * it — there'd be nothing left to describe. Every mutator calls this on the
-   * way in instead, while the tree still holds the answer.
+   * commits, by which time a deletion has already taken the cursor's argument
+   * with it — there'd be nothing left to describe. Every mutator calls this on
+   * the way in instead, while the tree still holds the answer.
    */
   private markCursor(): void {
     const id = this.readCursor?.() ?? null;
@@ -121,14 +121,14 @@ export class Flow {
   }
 
   /**
-   * A card's structural position: its index among the roots, then among its
-   * parent's children, and so on down.
+   * An argument's structural position: its index among the roots, then among
+   * its parent's children, and so on down.
    *
    * Recorded next to the id because the id alone does not survive an undo.
    * Loro reverses a deletion by *re-creating* the subtree, and a created node
-   * takes a fresh `TreeID` — so the card the user is looking at after undo has
-   * a different name than the one that went away. Its place in the flow, on
-   * the other hand, is exactly the one it left.
+   * takes a fresh `TreeID` — so the argument the user is looking at after undo
+   * has a different name than the one that went away. Its place in the flow,
+   * on the other hand, is exactly the one it left.
    */
   private pathOf(id: string): number[] {
     const path: number[] = [];
@@ -140,7 +140,7 @@ export class Flow {
     return path;
   }
 
-  /** The card now sitting at `path`, if anything does. */
+  /** The argument now sitting at `path`, if anything does. */
   private atPath(path: number[]): string | null {
     let siblings = this.tree.roots();
     let node: LoroTreeNode | undefined;
@@ -152,7 +152,7 @@ export class Flow {
     return node?.id ?? null;
   }
 
-  /** Turn a mark back into a card: by id if it still names one, else by place. */
+  /** Turn a mark back into an argument: by id if it still names one, else by place. */
   private locate(mark: string): string | null {
     const [id, path] = mark.split("#");
     if (id && this.has(id)) return id;
@@ -163,9 +163,9 @@ export class Flow {
   /**
    * Undo the last local change.
    *
-   * Returns the card the cursor should go to — where the undone change was
-   * made — or null if that isn't known, or `undefined` when there was nothing
-   * to undo at all. The caller has to tell those last two apart.
+   * Returns the argument the cursor should go to — where the undone change
+   * was made — or null if that isn't known, or `undefined` when there was
+   * nothing to undo at all. The caller has to tell those last two apart.
    *
    * Only *your* edits are undone — a peer's concurrent changes are left in
    * place, which is what you want when two people flow the same round.
@@ -229,10 +229,10 @@ export class Flow {
     const at = this.resolve(anchor);
     const speech = init.speech ?? at.speech;
     const siblings = at.parent ? (at.parent.children() ?? []) : this.tree.roots();
-    // Read the neighbour before joining it: a card starts out marked like
-    // whichever same-speech sibling it lands next to, so it simply continues
-    // that run. Done here rather than in the keymap so every way of making a
-    // card — a binding, a paste, a drop — inherits alike.
+    // Read the neighbour before joining it: an argument starts out marked
+    // like whichever same-speech sibling it lands next to, so it simply
+    // continues that run. Done here rather than in the keymap so every way of
+    // making an argument — a binding, a paste, a drop — inherits alike.
     const mark = init.mark ?? this.neighborMark(siblings, at.index, speech);
     const node = at.parent
       ? at.parent.createNode(at.index)
@@ -245,11 +245,11 @@ export class Flow {
   }
 
   /**
-   * The mark a new card should start with: its same-speech neighbour's, found
-   * by scanning outward from the insertion point — backward first, since a
-   * card usually continues the run before it, then forward for one inserted
-   * at the very start of the list. The document default if the list has
-   * nothing in that speech yet.
+   * The mark a new argument should start with: its same-speech neighbour's,
+   * found by scanning outward from the insertion point — backward first,
+   * since an argument usually continues the run before it, then forward for
+   * one inserted at the very start of the list. The document default if the
+   * list has nothing in that speech yet.
    *
    * `siblings` mixes every speech together (it's `parent.children()` as Loro
    * keeps it, or the roots) because `index` — the slot `resolve` computed — is
@@ -271,19 +271,21 @@ export class Flow {
     return DEFAULT_MARK;
   }
 
-  /** How the card's own run is marked — see `Mark`. */
+  /** How the argument's own run is marked — see `Mark`. */
   markOf(id: string): Mark {
     return readMark(this.requireNode(id));
   }
 
   /**
-   * Mark every card in `ids` the same way, in one commit — so a multi-card
-   * selection re-marks as one undo step rather than one per card.
+   * Mark every argument in `ids` the same way, in one commit — so a
+   * multi-argument selection re-marks as one undo step rather than one per
+   * argument.
    *
-   * Unlike the old whole-group behaviour, this touches only the cards named:
-   * a run is no longer a fixed unit the flow enforces, just whatever a "1. 2.
-   * 3." reads as as you scan down a column — the keymap decides what counts
-   * as "the selection" (see `selectedIds` in commands.ts), not this method.
+   * Unlike the old whole-group behaviour, this touches only the arguments
+   * named: a run is no longer a fixed unit the flow enforces, just whatever a
+   * "1. 2. 3." reads as as you scan down a column — the keymap decides what
+   * counts as "the selection" (see `selectedIds` in commands.ts), not this
+   * method.
    */
   setMarks(ids: string[], mark: Mark): void {
     this.markCursor();

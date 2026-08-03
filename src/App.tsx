@@ -22,7 +22,7 @@ import {
   submitCommand,
   typeCommand,
 } from "./flow/commands";
-import { CardEditor } from "./flow/card_editor";
+import { ArgumentEditor } from "./flow/argument_editor";
 import { buildDictionary, textsOf } from "./flow/complete";
 import "./App.css";
 
@@ -71,7 +71,7 @@ const HINTS: [key: string, does: string][] = [
 
 // Typing writes through to the CRDT at most this often. Each write commits,
 // which re-renders and re-measures the whole grid — too much per keystroke.
-// Edits always flush synchronously when the card closes, so nothing is lost.
+// Edits always flush synchronously when the argument closes, so nothing is lost.
 const TEXT_WRITE_MS = 150;
 
 // Seed a small sample flow so the grid isn't empty on first load. One batch, so
@@ -99,10 +99,10 @@ function App() {
   // vocabulary as it's written.
   const dictionary = useMemo(() => buildDictionary(textsOf(roots)), [roots]);
 
-  // How the cursor's own card is marked, for the status line — but only when
-  // it isn't the default. A run of one draws no mark at all (a bare "1." is
-  // noise), so without this `#` would look like a key that does nothing on the
-  // first card of a fresh run, which is exactly where you press it.
+  // How the cursor's own argument is marked, for the status line — but only
+  // when it isn't the default. A run of one draws no mark at all (a bare "1."
+  // is noise), so without this `#` would look like a key that does nothing on
+  // the first argument of a fresh run, which is exactly where you press it.
   //
   // Read from the flow rather than from `roots`, but keyed on `roots`: the mark
   // is written to the document, so the read is only stale until the commit that
@@ -115,7 +115,7 @@ function App() {
   // The selection's size, for the status line. Derived rather than read off
   // the state directly for the same reason `#` and `x` derive it (see
   // `selectedIds` in commands.ts) — `selectAnchor` is only ever an anchor, not
-  // a cached list, so anything that wants to know how many cards are
+  // a cached list, so anything that wants to know how many arguments are
   // selected has to ask `placed` the same question the commands do.
   const selectionSize = useMemo(
     () => selectionRange(placed, selectAnchor, cursorId).length,
@@ -160,19 +160,19 @@ function App() {
     setEditor((s) => ({ ...s, editingId: null }));
   }, [flushText]);
 
-  // Keep the cursor valid if its card disappears (e.g. after delete).
+  // Keep the cursor valid if its argument disappears (e.g. after delete).
   //
   // Asked of the flow, not of `placed`: the layout trails the document by a
   // tick, because Loro delivers its change events asynchronously. Testing
   // against it would drop the cursor undo had just legitimately restored — the
-  // card is back in the document, but not yet in the layout.
+  // argument is back in the document, but not yet in the layout.
   useEffect(() => {
     if (cursorId && !flow.has(cursorId)) {
       setEditor((s) => ({ ...s, cursorId: null }));
     }
   }, [roots, cursorId, flow]);
 
-  // Vim-style keyboard control. Suspended while editing a card.
+  // Vim-style keyboard control. Suspended while editing an argument.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (editingId) return; // let the textarea own the keyboard
@@ -216,15 +216,15 @@ function App() {
   }, []);
 
   const renderArgument = (arg: Argument) => {
-    // No cursor state on the card: the cell wears it, so that the number is
-    // inside the highlight — see the stylesheet.
-    const cardClass = "flow-card";
+    // No cursor state on the argument: the cell wears it, so that the number
+    // is inside the highlight — see the stylesheet.
+    const argumentClass = "flow-argument";
 
     if (arg.id === editingId) {
       return (
-        <CardEditor
+        <ArgumentEditor
           key={`edit-${arg.id}`}
-          className={cardClass}
+          className={argumentClass}
           initialText={arg.text}
           dictionary={dictionary}
           onChange={(text) => queueText(arg.id, text)}
@@ -235,7 +235,7 @@ function App() {
 
     return (
       <div
-        className={cardClass}
+        className={argumentClass}
         // Through the same helper the keymap uses, so a click on a collapsed
         // rectangle two speeches away drops focus (and any selection) exactly
         // as `l l` would.
@@ -248,7 +248,7 @@ function App() {
           }))
         }
       >
-        {arg.text || <span className="flow-card__placeholder">empty</span>}
+        {arg.text || <span className="flow-argument__placeholder">empty</span>}
       </div>
     );
   };
@@ -335,10 +335,10 @@ function App() {
             {selectionSize > 1 ? `${selectionSize} selected` : "select"}
           </span>
         )}
-        {/* Only when the cursor's own card isn't marked the ordinary way, on
-            the same terms as the zoom below: the default says nothing worth a
-            chip, and the two that aren't the default are invisible on a run
-            that has only one card so far. */}
+        {/* Only when the cursor's own argument isn't marked the ordinary way,
+            on the same terms as the zoom below: the default says nothing
+            worth a chip, and the two that aren't the default are invisible on
+            a run that has only one argument so far. */}
         {mark !== "num" && (
           <span className="app__mode">{mark === "alpha" ? "a. b. c." : "no marks"}</span>
         )}

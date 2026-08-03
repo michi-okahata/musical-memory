@@ -12,14 +12,14 @@ import { moveCursor, moveToColumn, selectionRange, type Motion } from "./navigat
  */
 
 export interface EditorState {
-  /** The card the cursor sits on, or null when nothing is selected. */
+  /** The argument the cursor sits on, or null when nothing is selected. */
   cursorId: string | null;
-  /** The card being text-edited, or null. Suspends the keymap while set. */
+  /** The argument being text-edited, or null. Suspends the keymap while set. */
   editingId: string | null;
   /**
    * Digits typed but not yet spent. They name a speech to the commands that
-   * create a card (`4a` answers in the 4th speech, not the next one) and a
-   * repeat count to the motions (`3j`). Null when nothing is pending.
+   * create an argument (`4a` answers in the 4th speech, not the next one) and
+   * a repeat count to the motions (`3j`). Null when nothing is pending.
    */
   count: number | null;
   /**
@@ -50,9 +50,10 @@ export interface EditorState {
    * How large the sheet is drawn, as a multiple of its authored size. 1 is the
    * 10px type the flow is designed at.
    *
-   * A scale rather than a font size because everything about a card is bound
-   * to its type — the number gutter, the row gap, the width a collapsed speech
-   * keeps — and they all have to move together or the sheet stops lining up.
+   * A scale rather than a font size because everything about an argument is
+   * bound to its type — the number gutter, the row gap, the width a collapsed
+   * speech keeps — and they all have to move together or the sheet stops
+   * lining up.
    */
   zoom: number;
 }
@@ -72,8 +73,8 @@ export interface CommandContext {
   flow: Flow;
   /**
    * The current layout. Only the motions need it — where an argument *sits* is
-   * spatial. Anything that asks which speech a card is in goes to the flow,
-   * which owns that answer.
+   * spatial. Anything that asks which speech an argument is in goes to the
+   * flow, which owns that answer.
    */
   placed: Placed[];
   /** The speeches, in order. Their names are what the command line resolves. */
@@ -153,7 +154,7 @@ export function typeCommand(state: EditorState, text: string): EditorState {
 const edit: Command = ({ state }) =>
   state.cursorId ? { ...state, editingId: state.cursorId } : state;
 
-/** Every creating command lands the cursor on the new card and opens it. */
+/** Every creating command lands the cursor on the new argument and opens it. */
 const editing = (state: EditorState, id: string): EditorState => ({
   ...state,
   cursorId: id,
@@ -204,31 +205,31 @@ const newRoot =
  * more creating keys — but there are five creating keys already (`a`, `o`, `O`,
  * `n`, `N`), and three marks apiece is fifteen bindings for a keymap that fits
  * on the status line today. It also asks the wrong question at the wrong time:
- * you are making a card, and it wants to know about the *list*.
+ * you are making an argument, and it wants to know about the *list*.
  *
- * So the mark is not chosen at creation at all. A new card takes the mark of
- * whichever same-speech neighbour it lands next to (see `Flow.add`), which is
- * right nearly always — the second answer to an argument is marked like the
- * first — and `#` re-marks it when that's wrong: a lettered aside in the
+ * So the mark is not chosen at creation at all. A new argument takes the mark
+ * of whichever same-speech neighbour it lands next to (see `Flow.add`), which
+ * is right nearly always — the second answer to an argument is marked like
+ * the first — and `#` re-marks it when that's wrong: a lettered aside in the
  * middle of a numbered run, an independent point that should carry no mark at
- * all. One key, no mode, and it composes with every way of making a card
+ * all. One key, no mode, and it composes with every way of making an argument
  * rather than doubling each of them. Helix earns its keyboard the same way:
  * operators on a selection, not a verb per noun.
  *
- * That selection is `v`, below — one card by default, or a run picked out in a
- * column. `#` was originally "re-mark the whole group *for* you", back when a
- * column numbered as a single block; now that a mark is a per-card fact and a
- * column can hold several independent runs (an implicit forest — see
- * `markIndices` in layout_engine.ts), there is no group to imply, so it re-marks
- * whatever is selected instead.
+ * That selection is `v`, below — one argument by default, or a run picked out
+ * in a column. `#` was originally "re-mark the whole group *for* you", back
+ * when a column numbered as a single block; now that a mark is a per-argument
+ * fact and a column can hold several independent runs (an implicit forest —
+ * see `markIndices` in layout_engine.ts), there is no group to imply, so it
+ * re-marks whatever is selected instead.
  */
 const MARKS: Mark[] = ["num", "alpha", "none"];
 
 /**
- * The cards a command that reads "the selection" should act on: the visual
- * range if one is open, else just the cursor's own card. Never empty when
- * there's a cursor — the fallback is what lets `#` and `x` work exactly as
- * before `v` existed, for anyone who never presses it.
+ * The arguments a command that reads "the selection" should act on: the
+ * visual range if one is open, else just the cursor's own argument. Never
+ * empty when there's a cursor — the fallback is what lets `#` and `x` work
+ * exactly as before `v` existed, for anyone who never presses it.
  */
 function selectedIds({ state, placed }: CommandContext): string[] {
   if (!state.cursorId) return [];
@@ -237,14 +238,15 @@ function selectedIds({ state, placed }: CommandContext): string[] {
 }
 
 /**
- * Re-mark the selection: 1. → a. → nothing → 1. for every card in it, in one
- * commit — so a multi-card `#` is one undo step, not one per card.
+ * Re-mark the selection: 1. → a. → nothing → 1. for every argument in it, in
+ * one commit — so a multi-argument `#` is one undo step, not one per
+ * argument.
  *
  * Cycling rather than three keys because there are three states and a glance
  * at the sheet says which one a run is in. The "next" value comes from the
- * cursor's own card, not the selection's first — pressing `#` always means
- * "away from what the cursor is currently marked", whichever end of the range
- * the cursor happens to be at.
+ * cursor's own argument, not the selection's first — pressing `#` always
+ * means "away from what the cursor is currently marked", whichever end of the
+ * range the cursor happens to be at.
  */
 const cycleMark: Command = (ctx) => {
   const { state, flow } = ctx;
@@ -265,9 +267,10 @@ const toggleSelect: Command = ({ state }) => {
 };
 
 /**
- * Delete every selected card, and everything responding to each — one commit,
- * so a multi-card `x` is one undo step. Lands on the parent of the first
- * selected card, the same rule single-card delete already used.
+ * Delete every selected argument, and everything responding to each — one
+ * commit, so a multi-argument `x` is one undo step. Lands on the parent of
+ * the first selected argument, the same rule single-argument delete already
+ * used.
  */
 const remove: Command = (ctx) => {
   const { state, flow } = ctx;
@@ -276,8 +279,9 @@ const remove: Command = (ctx) => {
   const parent = flow.parentOf(ids[0]);
   flow.batch(() => {
     for (const id of ids) {
-      // A selected descendant of another selected card is already gone by the
-      // time its own turn comes — deleting a card takes its subtree with it.
+      // A selected descendant of another selected argument is already gone by
+      // the time its own turn comes — deleting an argument takes its subtree
+      // with it.
       if (flow.has(id)) flow.remove(id);
     }
   });
@@ -286,18 +290,19 @@ const remove: Command = (ctx) => {
 
 /**
  * Shift the whole selection one slot earlier ("up") or later ("down") among
- * its own siblings — cards actually sharing a parent and a speech, not merely
- * a column. A selection that crosses parents is exactly the "forest" a column
- * can hold (see `markIndices`), and "move it up a slot" has no one meaning
- * for cards that aren't siblings of each other — so this does nothing there
- * rather than guess. Reparenting a selection is a different feature.
+ * its own siblings — arguments actually sharing a parent and a speech, not
+ * merely a column. A selection that crosses parents is exactly the "forest" a
+ * column can hold (see `markIndices`), and "move it up a slot" has no one
+ * meaning for arguments that aren't siblings of each other — so this does
+ * nothing there rather than guess. Reparenting a selection is a different
+ * feature.
  *
  * Implemented by moving the *neighbour* past the block instead of moving the
  * block: `Flow.move`'s index is a position in the parent's full child list —
- * every speech mixed together — so hopping one card over it is one `move`
- * call regardless of how many cards the selection covers, where relocating
- * each selected card individually would have to renumber the others out from
- * under it as it went.
+ * every speech mixed together — so hopping one argument over it is one
+ * `move` call regardless of how many arguments the selection covers, where
+ * relocating each selected argument individually would have to renumber the
+ * others out from under it as it went.
  */
 const moveSelection =
   (dir: "up" | "down"): Command =>
@@ -347,8 +352,8 @@ const moveSelection =
 
 /**
  * Undo / redo, landing the cursor where the change was made rather than
- * wherever it happens to be now — undoing a delete puts you back on the card
- * that came back, not on its parent.
+ * wherever it happens to be now — undoing a delete puts you back on the
+ * argument that came back, not on its parent.
  */
 const history =
   (direction: "undo" | "redo"): Command =>
@@ -433,9 +438,9 @@ export function keyOf(e: {
 /**
  * `a` is the one key that means something different here than in vim: an
  * *answer*, the core move in flowing a round. Editing keeps `i` — "insert"
- * would be ambiguous as a card command anyway (insert text, or insert an
- * argument?), and a mis-pressed `i` that silently made a card would swallow
- * the edit you meant to type.
+ * would be ambiguous as a command here anyway (insert text, or insert an
+ * argument?), and a mis-pressed `i` that silently made an argument would
+ * swallow the edit you meant to type.
  */
 export const commands: Record<string, Command> = {
   ...digits,
@@ -497,8 +502,8 @@ const SELECTION_KEYS = new Set(["h", "j", "k", "l", "v", "#", "x", "J", "K"]);
  * wherever the cursor landed.
  *
  * Applied to whole states rather than inside the motions so that *every* way
- * of moving the cursor obeys it — a keystroke, a jump to a far speech, a card
- * created two speeches over, a click on a collapsed rectangle.
+ * of moving the cursor obeys it — a keystroke, a jump to a far speech, an
+ * argument created two speeches over, a click on a collapsed rectangle.
  */
 export function releaseFocus(state: EditorState, flow: Flow): EditorState {
   if (state.focus === null) return state;
@@ -515,8 +520,8 @@ export function releaseFocus(state: EditorState, flow: Flow): EditorState {
  * same shape as `releaseFocus`, and for the same reason: a click, a jump to a
  * named speech, or `h`/`l` leaving the column can each strand an anchor
  * somewhere the cursor no longer ranges over. `selectionRange` already treats
- * "no shared column" and "the anchor's card is gone" as the same not-a-range
- * case, so emptiness is the one check this needs.
+ * "no shared column" and "the anchor's argument is gone" as the same
+ * not-a-range case, so emptiness is the one check this needs.
  */
 export function releaseSelection(state: EditorState, placed: Placed[]): EditorState {
   if (state.selectAnchor === null) return state;
@@ -524,7 +529,7 @@ export function releaseSelection(state: EditorState, placed: Placed[]): EditorSt
   return stillRanges ? state : { ...state, selectAnchor: null };
 }
 
-/** Put the cursor on a card from outside the keymap — a click — same rules. */
+/** Put the cursor on an argument from outside the keymap — a click — same rules. */
 export function moveCursorTo(
   state: EditorState,
   flow: Flow,
@@ -542,9 +547,9 @@ export function moveCursorTo(
  * digits build it up, and every other key spends it and is done. The
  * selection is cleared the same way and for the same reason — only the keys
  * that read or extend it (`SELECTION_KEYS`, plus the digits a count for one of
- * them might need) get to leave it standing; anything else — editing a card,
- * answering, undo — is a normal-mode action that shouldn't inherit a
- * selection some earlier `v` left lying around.
+ * them might need) get to leave it standing; anything else — editing an
+ * argument, answering, undo — is a normal-mode action that shouldn't inherit
+ * a selection some earlier `v` left lying around.
  */
 export function run(key: string, ctx: CommandContext): EditorState | null {
   const command = commands[key];

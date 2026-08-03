@@ -18,12 +18,12 @@
   -moz-osx-font-smoothing: grayscale;
   -webkit-text-size-adjust: 100%;
 
-  color: var(--card-fg);
+  color: var(--argument-fg);
   background-color: var(--sheet);
 
   /* ---- flow design tokens ---------------------------------------------
-     Everything static about a card lives here. Per-node values the layout
-     computes (grid column / row / span) stay inline in the component.
+     Everything static about an argument lives here. Per-node values the
+     layout computes (grid column / row / span) stay inline in the component.
 
      The palette is one hue — a violet-leaning neutral — plus a single accent
      drawn from it. Nothing else is coloured, so the two things that *are* (the
@@ -34,12 +34,13 @@
      surface, so only one side carries a shade and the other is simply paper.
      See --band-neg. */
   --sheet: #f8f7fa;
-  /* Cards are transparent — see .flow-card. That is what retires the old rule
-     that the sheet and the card surface had to be the same colour: a reserved
-     cell (a row inflated by a tall neighbour) and the card beside it are now
-     painted by the same element, so they cannot drift apart. */
-  --card-fg: #201f26;
-  --card-line-height: 1.35;
+  /* Arguments are transparent — see .flow-argument. That is what retires the
+     old rule that the sheet and the argument surface had to be the same
+     colour: a reserved cell (a row inflated by a tall neighbour) and the
+     argument beside it are now painted by the same element, so they cannot
+     drift apart. */
+  --argument-fg: #201f26;
+  --argument-line-height: 1.35;
 
   /* ---- sides ----------------------------------------------------------
      Which side a column belongs to, as a shade rather than a colour: the neg
@@ -55,7 +56,7 @@
      at a time. */
   --accent: #7a5ba6;
   /* The cursor is a wash plus a hairline, not a ring: at these row heights a
-     2px ring is thicker than the gap between two cards. */
+     2px ring is thicker than the gap between two arguments. */
   --cursor: var(--accent);
   --cursor-bg: rgba(122, 91, 166, 0.13);
   --cursor-ring: rgba(122, 91, 166, 0.38);
@@ -63,14 +64,14 @@
 
   --muted: #8b8794;
   --placeholder: #aaa6b4;
-  /* The rule down the left of every card. Structural, and there is one per
-     card, so it stops short of black — at this density full black reads as a
-     grid of bars rather than as text with a margin. */
-  --card-border: #33303c;
+  /* The rule down the left of every argument. Structural, and there is one
+     per argument, so it stops short of black — at this density full black
+     reads as a grid of bars rather than as text with a margin. */
+  --argument-border: #33303c;
   --rule: #dcd8e4;
-  --card-hover: rgba(32, 31, 38, 0.04);
+  --argument-hover: rgba(32, 31, 38, 0.04);
   --status-height: 20px;
-  /* The fill of a card in a collapsed speech; its size is zoomed, below.
+  /* The fill of an argument in a collapsed speech; its size is zoomed, below.
      Translucent so one value reads correctly over either side's band. */
   --collapsed-fill: rgba(51, 48, 60, 0.22);
   --collapsed-hover: rgba(51, 48, 60, 0.42);
@@ -86,10 +87,10 @@
   :root {
     --sheet: #1a191f;
     --band-neg: #232028;
-    --card-fg: #e3e0e9;
-    --card-border: #4c4759;
+    --argument-fg: #e3e0e9;
+    --argument-border: #4c4759;
     --rule: #2e2b36;
-    --card-hover: rgba(227, 224, 233, 0.05);
+    --argument-hover: rgba(227, 224, 233, 0.05);
 
     /* Lilac rather than violet: the same accent one step lighter and less
        saturated, which is what it takes to stay quiet against a dark sheet. */
@@ -141,13 +142,14 @@ body {
      the one set on this element. Two metrics can't be expressed this way at
      all — see `scaled` in flow_view.tsx. */
   --zoom: 1;
-  --card-font-size: calc(10px * var(--zoom));
+  --argument-font-size: calc(10px * var(--zoom));
   /* Tight, and asymmetric: the 3px on the left is the whole distance between
      the rule and the first letter, and it is doing real work at 10px type.
      The same 3px is what separates a number from the text it numbers. */
-  --card-pad: 0 calc(2px * var(--zoom)) 0 calc(3px * var(--zoom));
-  --card-gutter: calc(3px * var(--zoom));
-  /* How tall the rectangle standing in for a card in a collapsed speech is. */
+  --argument-pad: 0 calc(2px * var(--zoom)) 0 calc(3px * var(--zoom));
+  --argument-gutter: calc(3px * var(--zoom));
+  /* How tall the rectangle standing in for an argument in a collapsed speech
+     is. */
   --collapsed-mark: calc(14px * var(--zoom));
   --column-gap: calc(7px * var(--zoom));
   /* How far a side band reaches past its own column, into the gutter: exactly
@@ -195,7 +197,7 @@ body {
 
 .app__hint kbd {
   font: inherit;
-  color: var(--card-fg);
+  color: var(--argument-fg);
 }
 
 .app__hint i {
@@ -231,7 +233,7 @@ body {
   display: flex;
   align-items: center;
   flex: 1;
-  color: var(--card-fg);
+  color: var(--argument-fg);
 }
 
 .app__cmd {
@@ -267,9 +269,9 @@ body {
 /* ---- sides ------------------------------------------------------------
    One band per speech, behind everything, running the whole height of the
    sheet: the flow's own answer to "whose speech am I reading". It has to be a
-   band and not a card colour, because half of what tells you a column is a
-   column is the empty space in it — the rows a tall neighbour reserved, the
-   gaps between arguments, the run of sheet below the last card.
+   band and not an argument colour, because half of what tells you a column is
+   a column is the empty space in it — the rows a tall neighbour reserved, the
+   gaps between arguments, the run of sheet below the last argument.
 
    Painted by an element rather than by the grid's background so it tracks the
    column tracks exactly, focus mode included: when a speech narrows to 24px,
@@ -313,13 +315,14 @@ body {
   letter-spacing: 0.02em;
   /* Same bleed as the band it caps, so a speech's shading is one shape from
      the label down. The left padding carries the bleed back, which is what
-     keeps the label over the card text below it rather than out in the gutter.
-     It also makes the underline continuous across the sheet — the gutters used
-     to break it into seven. */
+     keeps the label over the argument text below it rather than out in the
+     gutter. It also makes the underline continuous across the sheet — the
+     gutters used to break it into seven. */
   margin-inline: calc(-1 * var(--band-bleed));
-  /* The 1px is the cards' rule, which the label clears rather than sits on. */
-  padding: 1px 0 2px calc(var(--band-bleed) + 1px + var(--card-gutter));
-  color: var(--card-fg);
+  /* The 1px is the arguments' rule, which the label clears rather than sits
+     on. */
+  padding: 1px 0 2px calc(var(--band-bleed) + 1px + var(--argument-gutter));
+  color: var(--argument-fg);
   /* Stays put on a long flow; the sheet scrolls under it. */
   position: sticky;
   top: 0;
@@ -337,23 +340,23 @@ body {
 }
 
 /* Parents keep their natural height instead of filling their row span.
-   The rule down the left belongs to the cell rather than to the card, which is
-   what puts the number inside it: number and text are two items in the same
-   box, and the rule opens the box. */
+   The rule down the left belongs to the cell rather than to the argument,
+   which is what puts the number inside it: number and text are two items in
+   the same box, and the rule opens the box. */
 .flow-cell {
   align-self: start;
   display: flex;
   align-items: flex-start;
-  border-left: 1px solid var(--card-border);
-  /* Keep the cursor off the edges: the sheet starts scrolling once the card
-     gets within a quarter of the window of the top or bottom, so you can
-     always see what you're flowing into.
+  border-left: 1px solid var(--argument-border);
+  /* Keep the cursor off the edges: the sheet starts scrolling once the
+     argument gets within a quarter of the window of the top or bottom, so you
+     can always see what you're flowing into.
      This is the whole implementation — `scrollIntoView({block: "nearest"})`
      scrolls only far enough to fit the element *plus its scroll margin*, so a
-     quarter-window margin means no scrolling at all while the card sits in the
-     middle half, and a minimal correction the moment it leaves. The `max()`
-     keeps a card clear of the sticky header and the status line on a window
-     too short for the quarter to cover them. */
+     quarter-window margin means no scrolling at all while the argument sits
+     in the middle half, and a minimal correction the moment it leaves. The
+     `max()` keeps an argument clear of the sticky header and the status line
+     on a window too short for the quarter to cover them. */
   scroll-margin-top: max(var(--scroll-keepout), 24px);
   scroll-margin-bottom: max(
     var(--scroll-keepout),
@@ -362,21 +365,21 @@ body {
 }
 
 /* A visual selection: the same accent wash the cursor uses, quieter and with
-   no rule or ring of its own — those two are what say "this exact card", and a
-   multi-card selection has no single card to say it about. Comes before
-   `.is-cursor` in the file so the cursor's own (stronger) look wins on the one
-   cell that carries both classes, at equal specificity. */
+   no rule or ring of its own — those two are what say "this exact argument",
+   and a multi-argument selection has no single argument to say it about.
+   Comes before `.is-cursor` in the file so the cursor's own (stronger) look
+   wins on the one cell that carries both classes, at equal specificity. */
 .flow-cell.is-selected {
   background: var(--accent-soft);
 }
 
 /* ---- focus mode -------------------------------------------------------
-   A collapsed speech keeps only its shape: one rectangle per card, in the row
-   the card occupies, so you can still see where the answers fell. `font-size:
-   0` is what removes the text — it takes the line boxes with it, so the fixed
-   height below is the card's whole contribution and a collapsed column can
-   never inflate a row the focused speeches share. */
-.flow-cell.is-collapsed .flow-card {
+   A collapsed speech keeps only its shape: one rectangle per argument, in the
+   row the argument occupies, so you can still see where the answers fell.
+   `font-size: 0` is what removes the text — it takes the line boxes with it,
+   so the fixed height below is the argument's whole contribution and a
+   collapsed column can never inflate a row the focused speeches share. */
+.flow-cell.is-collapsed .flow-argument {
   height: var(--collapsed-mark);
   font-size: 0;
   overflow: hidden;
@@ -384,23 +387,23 @@ body {
   cursor: pointer;
 }
 
-/* No rule either. It marks where a card's text begins, and a collapsed card
-   has no text to begin — all that's left is the block itself, and a line down
-   one side of it just makes it look like a card that failed to render. Dropped
-   rather than hidden, so the block gets the full 24px instead of 23 and a
-   column of them reads as one clean stack. */
+/* No rule either. It marks where an argument's text begins, and a collapsed
+   argument has no text to begin — all that's left is the block itself, and a
+   line down one side of it just makes it look like an argument that failed to
+   render. Dropped rather than hidden, so the block gets the full 24px instead
+   of 23 and a column of them reads as one clean stack. */
 .flow-cell.is-collapsed {
   border-left: 0;
 }
 
-.flow-cell.is-collapsed .flow-card:hover {
+.flow-cell.is-collapsed .flow-argument:hover {
   background: var(--collapsed-hover);
 }
 
 /* The cursor inside a speech that's out of focus: the rectangle is all there
    is to colour, so it takes the accent whole. Cheap, and it is the only way to
    see where you are while the cursor is somewhere you aren't reading. */
-.flow-cell.is-collapsed.is-cursor .flow-card {
+.flow-cell.is-collapsed.is-cursor .flow-argument {
   background: var(--cursor);
 }
 
@@ -417,19 +420,19 @@ body {
   overflow: hidden;
 }
 
-/* The number reads as the first thing in the card rather than as a column of
-   its own: it takes the width of its digits and no more, and the text starts a
-   gutter after it. So it sits exactly where the first word would have, and a
-   two-digit number pushes the text along instead of overflowing a box sized
-   for one digit.
-   The text still hangs — the card is the flex item beside this one, so a
+/* The number reads as the first thing in the argument rather than as a column
+   of its own: it takes the width of its digits and no more, and the text
+   starts a gutter after it. So it sits exactly where the first word would
+   have, and a two-digit number pushes the text along instead of overflowing a
+   box sized for one digit.
+   The text still hangs — the argument is the flex item beside this one, so a
    wrapped line returns to the text, not under the number, which is what a
    numbered list does. */
 .flow-num {
   flex: none;
-  padding-left: var(--card-gutter);
-  font-size: var(--card-font-size);
-  line-height: var(--card-line-height);
+  padding-left: var(--argument-gutter);
+  font-size: var(--argument-font-size);
+  line-height: var(--argument-line-height);
   color: var(--muted);
   font-variant-numeric: tabular-nums;
   user-select: none;
@@ -446,25 +449,25 @@ body {
   z-index: 1;
 }
 
-/* ---- card ------------------------------------------------------------ */
-.flow-card {
+/* ---- argument ---------------------------------------------------------- */
+.flow-argument {
   /* The rule is the cell's (see .flow-cell). Zeroed here because a textarea
      comes with a UA border, and the edit box would sit a couple of pixels off
-     the card. */
+     the argument. */
   border: 0;
-  padding: var(--card-pad);
+  padding: var(--argument-pad);
   font-family: inherit;
-  font-size: var(--card-font-size);
-  line-height: var(--card-line-height);
-  /* Transparent, so the card takes the colour of the side band behind it. A
-     card that painted its own surface would have to be told which side it was
-     on, and — worse — would be a second source of truth for a colour the
-     reserved cells around it get from the band. */
+  font-size: var(--argument-font-size);
+  line-height: var(--argument-line-height);
+  /* Transparent, so the argument takes the colour of the side band behind it.
+     An argument that painted its own surface would have to be told which side
+     it was on, and — worse — would be a second source of truth for a colour
+     the reserved cells around it get from the band. */
   background: none;
-  color: var(--card-fg);
+  color: var(--argument-fg);
   cursor: pointer;
   /* Identical wrapping in display and edit so the edit box never grows
-     taller than the card (which would open a gap in the parent column). */
+     taller than the argument (which would open a gap in the parent column). */
   box-sizing: border-box;
   white-space: pre-wrap;
   overflow-wrap: break-word;
@@ -472,18 +475,19 @@ body {
   min-width: 0;
 }
 
-.flow-card:hover {
-  background: var(--card-hover);
+.flow-argument:hover {
+  background: var(--argument-hover);
 }
 
-/* The cursor: the left rule going accent-coloured, a wash across the card, and
-   a hairline around it. Three quiet signals rather than one loud one — the wash
-   is what you find from across the sheet, the rule is what tells you the exact
-   card, and none of them changes the card's size, so moving the cursor doesn't
-   move the flow.
-   Worn by the cell, not the card, so the number is inside the highlight — it is
-   part of the card now — and so the three layers of the editor, which all carry
-   the card's class, can't each stack another copy of the wash. */
+/* The cursor: the left rule going accent-coloured, a wash across the
+   argument, and a hairline around it. Three quiet signals rather than one
+   loud one — the wash is what you find from across the sheet, the rule is
+   what tells you the exact argument, and none of them changes the argument's
+   size, so moving the cursor doesn't move the flow.
+   Worn by the cell, not the argument, so the number is inside the highlight —
+   it is part of the argument now — and so the three layers of the editor,
+   which all carry the argument's class, can't each stack another copy of the
+   wash. */
 .flow-cell.is-cursor {
   border-color: var(--cursor);
   background: var(--cursor-bg);
@@ -493,18 +497,18 @@ body {
   z-index: 1;
 }
 
-.flow-card:focus-visible {
+.flow-argument:focus-visible {
   outline: 2px solid var(--cursor);
   outline-offset: -2px;
 }
 
-.flow-card__placeholder {
+.flow-argument__placeholder {
   color: var(--placeholder);
 }
 
-/* ---- card editor ------------------------------------------------------
-   Three superimposed layers (see card_editor.tsx). The sizer is the only one
-   in flow; the other two are stretched over it, so all three wrap alike. */
+/* ---- argument editor ----------------------------------------------------
+   Three superimposed layers (see argument_editor.tsx). The sizer is the only
+   one in flow; the other two are stretched over it, so all three wrap alike. */
 .flow-editor {
   position: relative;
   flex: 1 1 auto;
@@ -517,7 +521,7 @@ body {
 }
 
 .flow-editor__ghost,
-.flow-card--edit {
+.flow-argument--edit {
   position: absolute;
   inset: 0;
 }
@@ -540,7 +544,7 @@ body {
 }
 
 /* Editing variant — same box, textarea resets only. */
-.flow-card--edit {
+.flow-argument--edit {
   display: block;
   resize: none;
   outline: none;
@@ -550,15 +554,15 @@ body {
   background: transparent;
 }
 
-.flow-card--edit:hover {
+.flow-argument--edit:hover {
   background: transparent;
 }
 
 /* The edit box is inside a cell already showing the cursor three ways — the
    rule, the wash, the hairline. A focus ring is a fourth saying the same thing,
    and the loudest of them. The `outline: none` above can't stop it on its own:
-   the textarea is the only `.flow-card` anything can focus, so
-   `.flow-card:focus-visible` always applies, and it wins on specificity. */
-.flow-card--edit:focus-visible {
+   the textarea is the only `.flow-argument` anything can focus, so
+   `.flow-argument:focus-visible` always applies, and it wins on specificity. */
+.flow-argument--edit:focus-visible {
   outline: none;
 }

@@ -2,11 +2,11 @@ import React, { useEffect, useRef, useState } from "react";
 import { completionAt, type Dictionary } from "./complete";
 
 /**
- * The text editor for one card, with the suggested rest of the current word
- * shown behind the caret. Tab takes it.
+ * The text editor for one argument, with the suggested rest of the current
+ * word shown behind the caret. Tab takes it.
  *
- * Three layers, all sharing the card's metrics so they line up character for
- * character:
+ * Three layers, all sharing the argument's metrics so they line up character
+ * for character:
  *
  *   1. a sizer that holds the real text and gives the box its height — which
  *      is why nothing here measures or sets a height;
@@ -18,7 +18,7 @@ import { completionAt, type Dictionary } from "./complete";
  * time a keystroke changes what's being offered.
  */
 
-interface CardEditorProps {
+interface ArgumentEditorProps {
   className: string;
   initialText: string;
   dictionary: Dictionary;
@@ -28,13 +28,13 @@ interface CardEditorProps {
   onDone: () => void;
 }
 
-export function CardEditor({
+export function ArgumentEditor({
   className,
   initialText,
   dictionary,
   onChange,
   onDone,
-}: CardEditorProps): React.ReactElement {
+}: ArgumentEditorProps): React.ReactElement {
   // Local state, so a keystroke shows up now rather than after a round trip
   // through the CRDT — the flow is written to on a timer.
   const [text, setText] = useState(initialText);
@@ -59,7 +59,7 @@ export function CardEditor({
     requestAnimationFrame(() => el.setSelectionRange(at, at));
   };
 
-  // Start at the end of the text, the way resuming a card should feel.
+  // Start at the end of the text, the way resuming an argument should feel.
   useEffect(() => {
     const el = ref.current;
     el?.setSelectionRange(el.value.length, el.value.length);
@@ -83,14 +83,14 @@ export function CardEditor({
 
       <textarea
         ref={ref}
-        className={`${className} flow-card--edit`}
+        className={`${className} flow-argument--edit`}
         autoFocus
         value={text}
         onChange={(e) => write(e.currentTarget.value, e.currentTarget.selectionStart)}
         onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
         onBlur={onDone}
         onKeyDown={(e) => {
-          // The card keymap must not see keys meant for the text.
+          // The keymap must not see keys meant for the text.
           e.stopPropagation();
           if (e.key === "Tab" && suggestion) {
             e.preventDefault();
