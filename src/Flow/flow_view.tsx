@@ -1,5 +1,6 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { layoutFlow, markerOf, measureRows } from "./layout_engine";
+import { selectionRange } from "./navigate";
 import { FOCUS_REACH, type Argument, type Placed, type Speech } from "./types";
 
 /**
@@ -50,6 +51,13 @@ interface DebateFlowProps {
   /** The card to keep on screen. The sheet scrolls to follow it. */
   cursorId?: string | null;
   /**
+   * Where a visual selection began, or null/undefined when there isn't one.
+   * The selected cards are derived from this and `cursorId` (see
+   * `selectionRange`) rather than passed as a list — same reasoning as the
+   * editor state that owns it (see `EditorState.selectAnchor`).
+   */
+  selectAnchor?: string | null;
+  /**
    * How large to draw the sheet, as a multiple of its authored size. The type
    * itself is scaled in CSS; this is here for the metrics that can't be.
    */
@@ -62,6 +70,7 @@ export function DebateFlow({
   renderArgument,
   placed: placedProp,
   cursorId,
+  selectAnchor = null,
   focus = null,
   zoom = 1,
 }: DebateFlowProps): React.ReactElement {
@@ -70,6 +79,14 @@ export function DebateFlow({
     [roots, placedProp],
   );
   const placed = placedProp ?? ownPlaced;
+
+  // The selected cards, if any — everything between the anchor and the
+  // cursor. A `Set` of ids because rendering asks "is this one in it?" once
+  // per cell; `selectionRange`'s own ordering doesn't matter here.
+  const selected = useMemo(
+    () => new Set(selectionRange(placed, selectAnchor, cursorId ?? null).map((p) => p.id)),
+    [placed, selectAnchor, cursorId],
+  );
 
   const byId = useMemo(() => {
     const m = new Map<string, Argument>();
@@ -222,10 +239,13 @@ export function DebateFlow({
             // the page with it. The card element itself stays — clicking a
             // rectangle still puts the cursor there, which re-focuses it.
             // The cursor is worn by the cell rather than by the card, so that
-            // the number is inside the highlight — see the stylesheet.
+            // the number is inside the highlight — see the stylesheet. A
+            // selected cell that isn't the cursor gets the quieter of the two;
+            // the cursor cell carries both classes, and `.is-cursor` wins by
+            // appearing later in the stylesheet.
             className={`flow-cell${inFocus(p.col, focus) ? "" : " is-collapsed"}${
-              p.id === cursorId ? " is-cursor" : ""
-            }`}
+              selected.has(p.id) ? " is-selected" : ""
+            }${p.id === cursorId ? " is-cursor" : ""}`}
             // Placement comes from `layoutFlow` — inherently per-node, so it
             // cannot live in a stylesheet.
             style={{

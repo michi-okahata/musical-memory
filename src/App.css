@@ -361,6 +361,15 @@ body {
   );
 }
 
+/* A visual selection: the same accent wash the cursor uses, quieter and with
+   no rule or ring of its own — those two are what say "this exact card", and a
+   multi-card selection has no single card to say it about. Comes before
+   `.is-cursor` in the file so the cursor's own (stronger) look wins on the one
+   cell that carries both classes, at equal specificity. */
+.flow-cell.is-selected {
+  background: var(--accent-soft);
+}
+
 /* ---- focus mode -------------------------------------------------------
    A collapsed speech keeps only its shape: one rectangle per card, in the row
    the card occupies, so you can still see where the answers fell. `font-size:

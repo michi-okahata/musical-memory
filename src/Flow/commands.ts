@@ -1,6 +1,6 @@
 import type { Flow } from "./flow_crdt";
 import { FOCUS_REACH, type Mark, type Placed, type Speech } from "./types";
-import { moveCursor, moveToColumn, type Motion } from "./navigate";
+import { moveCursor, moveToColumn, selectionRange, type Motion } from "./navigate";
 
 /**
  * Vim-style editing on top of a `Flow`.
@@ -38,6 +38,15 @@ export interface EditorState {
    */
   command: string | null;
   /**
+   * Where a visual selection began, or null when there isn't one. The
+   * selection itself is never stored as a list — it's derived, whenever a
+   * command needs it, from this and `cursorId` (see `selectedIds` and
+   * `selectionRange` in navigate.ts). An anchor and a moving cursor is
+   * everything a range needs, and it can't go stale the way a captured list
+   * of ids could as the flow changes underneath it.
+   */
+  selectAnchor: string | null;
+  /**
    * How large the sheet is drawn, as a multiple of its authored size. 1 is the
    * 10px type the flow is designed at.
    *
@@ -54,6 +63,7 @@ export const initialEditorState: EditorState = {
   count: null,
   focus: null,
   command: null,
+  selectAnchor: null,
   zoom: 1,
 };
 
@@ -197,35 +207,143 @@ const newRoot =
  * you are making a card, and it wants to know about the *list*.
  *
  * So the mark is not chosen at creation at all. A new card takes the mark of
- * the group it lands in (see `Flow.add`), which is right nearly always — the
- * second answer to an argument is marked like the first — and `#` re-marks the
- * group when it isn't. One key, no mode, and it composes with every way of
- * making a card rather than doubling each of them. Helix earns its keyboard the
- * same way: operators on a selection, not a verb per noun.
+ * whichever same-speech neighbour it lands next to (see `Flow.add`), which is
+ * right nearly always — the second answer to an argument is marked like the
+ * first — and `#` re-marks it when that's wrong: a lettered aside in the
+ * middle of a numbered run, an independent point that should carry no mark at
+ * all. One key, no mode, and it composes with every way of making a card
+ * rather than doubling each of them. Helix earns its keyboard the same way:
+ * operators on a selection, not a verb per noun.
+ *
+ * That selection is `v`, below — one card by default, or a run picked out in a
+ * column. `#` was originally "re-mark the whole group *for* you", back when a
+ * column numbered as a single block; now that a mark is a per-card fact and a
+ * column can hold several independent runs (an implicit forest — see
+ * `markIndices` in layout_engine.ts), there is no group to imply, so it re-marks
+ * whatever is selected instead.
  */
 const MARKS: Mark[] = ["num", "alpha", "none"];
 
 /**
- * Re-mark the cursor's group: 1. → a. → nothing → 1.
- *
- * Cycling rather than three keys because there are three states and a glance at
- * the sheet says which one you are in. The exception is a group of one, which
- * draws no mark whatever it is set to — the status line names it there.
+ * The cards a command that reads "the selection" should act on: the visual
+ * range if one is open, else just the cursor's own card. Never empty when
+ * there's a cursor — the fallback is what lets `#` and `x` work exactly as
+ * before `v` existed, for anyone who never presses it.
  */
-const cycleMark: Command = ({ state, flow }) => {
+function selectedIds({ state, placed }: CommandContext): string[] {
+  if (!state.cursorId) return [];
+  const range = selectionRange(placed, state.selectAnchor, state.cursorId);
+  return range.length ? range.map((p) => p.id) : [state.cursorId];
+}
+
+/**
+ * Re-mark the selection: 1. → a. → nothing → 1. for every card in it, in one
+ * commit — so a multi-card `#` is one undo step, not one per card.
+ *
+ * Cycling rather than three keys because there are three states and a glance
+ * at the sheet says which one a run is in. The "next" value comes from the
+ * cursor's own card, not the selection's first — pressing `#` always means
+ * "away from what the cursor is currently marked", whichever end of the range
+ * the cursor happens to be at.
+ */
+const cycleMark: Command = (ctx) => {
+  const { state, flow } = ctx;
   if (!state.cursorId || !flow.has(state.cursorId)) return state;
   const at = MARKS.indexOf(flow.markOf(state.cursorId));
-  flow.setMark(state.cursorId, MARKS[(at + 1) % MARKS.length]);
+  flow.setMarks(selectedIds(ctx), MARKS[(at + 1) % MARKS.length]);
   return { ...state, count: null };
 };
 
-/** Delete the cursor's card and its subtree; land on its parent. */
-const remove: Command = ({ state, flow }) => {
-  if (!state.cursorId) return state;
-  const parent = flow.parentOf(state.cursorId);
-  flow.remove(state.cursorId);
-  return { ...state, cursorId: parent, editingId: null, count: null };
+/**
+ * Enter or leave visual selection: `v` anchors it at the cursor; `v` again
+ * (or anything that isn't a selection-aware key — see `SELECTION_KEYS`) drops
+ * it. With no cursor there is nothing to anchor to.
+ */
+const toggleSelect: Command = ({ state }) => {
+  if (state.selectAnchor !== null) return { ...state, selectAnchor: null };
+  return state.cursorId ? { ...state, selectAnchor: state.cursorId } : state;
 };
+
+/**
+ * Delete every selected card, and everything responding to each — one commit,
+ * so a multi-card `x` is one undo step. Lands on the parent of the first
+ * selected card, the same rule single-card delete already used.
+ */
+const remove: Command = (ctx) => {
+  const { state, flow } = ctx;
+  if (!state.cursorId) return state;
+  const ids = selectedIds(ctx);
+  const parent = flow.parentOf(ids[0]);
+  flow.batch(() => {
+    for (const id of ids) {
+      // A selected descendant of another selected card is already gone by the
+      // time its own turn comes — deleting a card takes its subtree with it.
+      if (flow.has(id)) flow.remove(id);
+    }
+  });
+  return { ...state, cursorId: parent, editingId: null, count: null, selectAnchor: null };
+};
+
+/**
+ * Shift the whole selection one slot earlier ("up") or later ("down") among
+ * its own siblings — cards actually sharing a parent and a speech, not merely
+ * a column. A selection that crosses parents is exactly the "forest" a column
+ * can hold (see `markIndices`), and "move it up a slot" has no one meaning
+ * for cards that aren't siblings of each other — so this does nothing there
+ * rather than guess. Reparenting a selection is a different feature.
+ *
+ * Implemented by moving the *neighbour* past the block instead of moving the
+ * block: `Flow.move`'s index is a position in the parent's full child list —
+ * every speech mixed together — so hopping one card over it is one `move`
+ * call regardless of how many cards the selection covers, where relocating
+ * each selected card individually would have to renumber the others out from
+ * under it as it went.
+ */
+const moveSelection =
+  (dir: "up" | "down"): Command =>
+  (ctx) => {
+    const { state, flow } = ctx;
+    const ids = selectedIds(ctx);
+    if (ids.length === 0) return state;
+
+    const parent = flow.parentOf(ids[0]);
+    if (ids.some((id) => flow.parentOf(id) !== parent)) return state;
+
+    const speech = flow.speechOf(ids[0]);
+    const siblings = flow.childrenOf(parent);
+    const firstAt = siblings.indexOf(ids[0]);
+    const lastAt = siblings.indexOf(ids[ids.length - 1]);
+
+    if (dir === "up") {
+      let prevAt = -1;
+      for (let i = firstAt - 1; i >= 0; i--) {
+        if (flow.speechOf(siblings[i]) === speech) {
+          prevAt = i;
+          break;
+        }
+      }
+      if (prevAt < 0) return state; // already first among its speech
+      // `prevAt` is removed from ahead of the block, so every later position
+      // — `lastAt` included — shifts back by one before the reinsertion is
+      // read; naming `lastAt` puts it exactly one slot past where the block
+      // now sits, i.e. immediately after it.
+      flow.move(siblings[prevAt], parent ?? undefined, lastAt);
+    } else {
+      let nextAt = -1;
+      for (let i = lastAt + 1; i < siblings.length; i++) {
+        if (flow.speechOf(siblings[i]) === speech) {
+          nextAt = i;
+          break;
+        }
+      }
+      if (nextAt < 0) return state; // already last among its speech
+      // `nextAt` is removed from behind the block, so positions at or before
+      // `firstAt` are undisturbed — naming `firstAt` puts it immediately
+      // before the block, i.e. one slot later than where it started.
+      flow.move(siblings[nextAt], parent ?? undefined, firstAt);
+    }
+    return { ...state, count: null };
+  };
 
 /**
  * Undo / redo, landing the cursor where the change was made rather than
@@ -334,7 +452,10 @@ export const commands: Record<string, Command> = {
   n: newRoot("after"), // a new argument tree, clear of this one
   N: newRoot("before"), // …above it: the overview case
   f: toggleFocus, // narrow the speeches you aren't in
-  "#": cycleMark, // how this run of arguments is marked off: 1. / a. / nothing
+  v: toggleSelect, // select a run in this column — # / x / J / K act on it
+  "#": cycleMark, // how the selection is marked off: 1. / a. / nothing
+  J: moveSelection("down"), // shift the selection past its next sibling…
+  K: moveSelection("up"), // …or its previous one
   // Zoom, on the keys it is drawn on. Deliberately not the platform chord:
   // Cmd +/- is the browser's own zoom and can't be taken off it, so binding
   // them here would scale the sheet twice over.
@@ -351,6 +472,16 @@ export const commands: Record<string, Command> = {
 };
 
 const isDigit = (key: string) => key.length === 1 && key >= "0" && key <= "9";
+
+/**
+ * Keys that read or extend the selection rather than starting fresh from the
+ * cursor — `run` leaves `selectAnchor` standing for these and drops it for
+ * everything else (see `run`, below). `h`/`j`/`k`/`l` are here even though
+ * `h`/`l` usually end up dropping the selection anyway (`releaseSelection`
+ * catches that once they've actually left the column) — while they haven't,
+ * mid-selection movement has to be allowed to run at all.
+ */
+const SELECTION_KEYS = new Set(["h", "j", "k", "l", "v", "#", "x", "J", "K"]);
 
 /**
  * Focus covers the pinned speech and the one either side. Take the cursor past
@@ -371,13 +502,28 @@ export function releaseFocus(state: EditorState, flow: Flow): EditorState {
     : { ...state, focus: null };
 }
 
+/**
+ * Whether `state`'s selection still makes sense, and drop it if not — the
+ * same shape as `releaseFocus`, and for the same reason: a click, a jump to a
+ * named speech, or `h`/`l` leaving the column can each strand an anchor
+ * somewhere the cursor no longer ranges over. `selectionRange` already treats
+ * "no shared column" and "the anchor's card is gone" as the same not-a-range
+ * case, so emptiness is the one check this needs.
+ */
+export function releaseSelection(state: EditorState, placed: Placed[]): EditorState {
+  if (state.selectAnchor === null) return state;
+  const stillRanges = selectionRange(placed, state.selectAnchor, state.cursorId).length > 0;
+  return stillRanges ? state : { ...state, selectAnchor: null };
+}
+
 /** Put the cursor on a card from outside the keymap — a click — same rules. */
 export function moveCursorTo(
   state: EditorState,
   flow: Flow,
   id: string,
+  placed: Placed[],
 ): EditorState {
-  return releaseFocus({ ...state, cursorId: id }, flow);
+  return releaseSelection(releaseFocus({ ...state, cursorId: id }, flow), placed);
 }
 
 /**
@@ -385,12 +531,19 @@ export function moveCursorTo(
  * should leave the event alone rather than swallowing it.
  *
  * Clearing the pending count lives here and not in the commands: only the
- * digits build it up, and every other key spends it and is done.
+ * digits build it up, and every other key spends it and is done. The
+ * selection is cleared the same way and for the same reason — only the keys
+ * that read or extend it (`SELECTION_KEYS`, plus the digits a count for one of
+ * them might need) get to leave it standing; anything else — editing a card,
+ * answering, undo — is a normal-mode action that shouldn't inherit a
+ * selection some earlier `v` left lying around.
  */
 export function run(key: string, ctx: CommandContext): EditorState | null {
   const command = commands[key];
   if (!command) return null;
   const next = command(ctx);
   const spent = isDigit(key) ? next : { ...next, count: null };
-  return releaseFocus(spent, ctx.flow);
+  const kept =
+    isDigit(key) || SELECTION_KEYS.has(key) ? spent : { ...spent, selectAnchor: null };
+  return releaseSelection(releaseFocus(kept, ctx.flow), ctx.placed);
 }

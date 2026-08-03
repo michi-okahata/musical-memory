@@ -29,6 +29,43 @@ function nearestInColumn(
 }
 
 /**
+ * Everything in `col`, top to bottom. What `j`/`k` step through, and the axis
+ * a visual selection (see `selectionRange`) ranges over — both care about the
+ * column's reading order, not the tree it came from.
+ */
+export function columnOrder(placed: Placed[], col: number): Placed[] {
+  return placed.filter((p) => p.col === col).sort((a, b) => a.row - b.row);
+}
+
+/**
+ * Everything from `anchorId` to `cursorId`, inclusive, in column order — the
+ * cards a visual selection covers. Empty whenever that's not a well-formed
+ * range: either id missing (a card the selection pointed to got deleted out
+ * from under it), or the two no longer share a column.
+ *
+ * That second case is normal, not a bug to guard against: `h`/`l` jump columns
+ * outright, so the keymap drops the selection the moment this goes empty (see
+ * `releaseSelection`) rather than trying to mean something across two columns
+ * with no shared order to range over.
+ */
+export function selectionRange(
+  placed: Placed[],
+  anchorId: string | null,
+  cursorId: string | null,
+): Placed[] {
+  if (!anchorId || !cursorId) return [];
+  const anchor = placed.find((p) => p.id === anchorId);
+  const cursor = placed.find((p) => p.id === cursorId);
+  if (!anchor || !cursor || anchor.col !== cursor.col) return [];
+
+  const column = columnOrder(placed, cursor.col);
+  const ai = column.findIndex((p) => p.id === anchor.id);
+  const ci = column.findIndex((p) => p.id === cursor.id);
+  const [lo, hi] = ai <= ci ? [ai, ci] : [ci, ai];
+  return column.slice(lo, hi + 1);
+}
+
+/**
  * Move the cursor `count` steps. Stops early where the motion runs out of grid
  * rather than wrapping — `10j` in a short column lands on its last card.
  */
@@ -61,9 +98,7 @@ function step(
   }
 
   if (motion === "j" || motion === "k") {
-    const column = placed
-      .filter((p) => p.col === cur.col)
-      .sort((a, b) => a.row - b.row);
+    const column = columnOrder(placed, cur.col);
     const i = column.findIndex((p) => p.id === cur.id);
     const next = motion === "j" ? column[i + 1] : column[i - 1];
     return next?.id ?? cur.id;

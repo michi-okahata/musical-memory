@@ -28,11 +28,44 @@ function computeSpans(roots: Argument[]): Map<string, number> {
   return spans;
 }
 
-/** How many siblings sit in each speech column, keyed by column. */
-function groupSizes(siblings: Argument[]): Map<number, number> {
-  const sizes = new Map<number, number>();
-  for (const s of siblings) sizes.set(s.speech, (sizes.get(s.speech) ?? 0) + 1);
-  return sizes;
+/**
+ * What to write beside each of `siblings`, keyed by id: position within its
+ * *run* — the maximal stretch of same-speech neighbours marked alike — or
+ * null for a run of one, where a bare "1." would be noise.
+ *
+ * A column no longer numbers as a single block. Two siblings can be marked
+ * differently (a card `#`-cycled away from its neighbours), and a card not
+ * sharing a parent with anything beside it is exactly as valid a member of a
+ * run as one that does — the "group" a mark applies to was retired along with
+ * the `#` binding it used to mean; what is left is only this: a contiguous
+ * same-speech, same-mark stretch counts together, and anything else doesn't.
+ *
+ * Grouped by speech first because siblings mix every column together in
+ * document order — the run has to be found inside one column's slice of that
+ * order, not across it.
+ */
+function markIndices(siblings: Argument[]): Map<string, number | null> {
+  const bySpeech = new Map<number, Argument[]>();
+  for (const s of siblings) {
+    const col = bySpeech.get(s.speech);
+    if (col) col.push(s);
+    else bySpeech.set(s.speech, [s]);
+  }
+
+  const out = new Map<string, number | null>();
+  for (const column of bySpeech.values()) {
+    let i = 0;
+    while (i < column.length) {
+      let j = i;
+      while (j < column.length && column[j].mark === column[i].mark) j++;
+      const runLength = j - i;
+      for (let k = i; k < j; k++) {
+        out.set(column[k].id, runLength > 1 ? k - i + 1 : null);
+      }
+      i = j;
+    }
+  }
+  return out;
 }
 
 export function layoutFlow(roots: Argument[]): Placed[] {
@@ -55,24 +88,18 @@ export function layoutFlow(roots: Argument[]): Placed[] {
     });
 
     const cursors = new Map<number, number>(); // per-column row cursor
-    const seq = new Map<number, number>(); // per-column "1., 2., 3." counter
-    const sizes = groupSizes(node.children);
+    const indices = markIndices(node.children);
     for (const child of node.children) {
       const r = cursors.get(child.speech) ?? row;
-      const n = (seq.get(child.speech) ?? 0) + 1;
-      seq.set(child.speech, n);
-      place(child, r, depth + 1, sizes.get(child.speech)! > 1 ? n : null);
+      place(child, r, depth + 1, indices.get(child.id) ?? null);
       cursors.set(child.speech, r + spans.get(child.id)!);
     }
   };
 
   let nextRow = 0;
-  const seq = new Map<number, number>();
-  const sizes = groupSizes(roots);
+  const indices = markIndices(roots);
   for (const root of roots) {
-    const n = (seq.get(root.speech) ?? 0) + 1;
-    seq.set(root.speech, n);
-    place(root, nextRow, 0, sizes.get(root.speech)! > 1 ? n : null);
+    place(root, nextRow, 0, indices.get(root.id) ?? null);
     nextRow += spans.get(root.id)!;
   }
   return placed;

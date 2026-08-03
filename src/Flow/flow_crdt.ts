@@ -228,11 +228,12 @@ export class Flow {
     this.markCursor();
     const at = this.resolve(anchor);
     const speech = init.speech ?? at.speech;
-    // Read the group before joining it: a card is marked like the run it lands
-    // in, so the choice is made once and inherited from then on. Doing it here
-    // rather than in the keymap means every way of making a card — a binding,
-    // a paste, a drop — inherits alike.
-    const mark = init.mark ?? this.groupMark(at.parent, speech);
+    const siblings = at.parent ? (at.parent.children() ?? []) : this.tree.roots();
+    // Read the neighbour before joining it: a card starts out marked like
+    // whichever same-speech sibling it lands next to, so it simply continues
+    // that run. Done here rather than in the keymap so every way of making a
+    // card — a binding, a paste, a drop — inherits alike.
+    const mark = init.mark ?? this.neighborMark(siblings, at.index, speech);
     const node = at.parent
       ? at.parent.createNode(at.index)
       : this.tree.createNode(undefined, at.index);
@@ -244,39 +245,65 @@ export class Flow {
   }
 
   /**
-   * The cards of one group: the siblings under `parent` — or the roots, when
-   * there is none — that sit in the same speech column. The unit a mark, and
-   * the numbering it draws, belong to.
+   * The mark a new card should start with: its same-speech neighbour's, found
+   * by scanning outward from the insertion point — backward first, since a
+   * card usually continues the run before it, then forward for one inserted
+   * at the very start of the list. The document default if the list has
+   * nothing in that speech yet.
+   *
+   * `siblings` mixes every speech together (it's `parent.children()` as Loro
+   * keeps it, or the roots) because `index` — the slot `resolve` computed — is
+   * a position in that same mixed list, and the two must agree to find the
+   * right neighbour.
    */
-  private groupNodes(parent: LoroTreeNode | undefined, speech: number) {
-    const siblings = parent ? (parent.children() ?? []) : this.tree.roots();
-    return siblings.filter((n) => this.readSpeech(n) === speech);
+  private neighborMark(
+    siblings: LoroTreeNode[],
+    index: number | undefined,
+    speech: number,
+  ): Mark {
+    const at = index ?? siblings.length;
+    for (let i = at - 1; i >= 0; i--) {
+      if (this.readSpeech(siblings[i]) === speech) return readMark(siblings[i]);
+    }
+    for (let i = at; i < siblings.length; i++) {
+      if (this.readSpeech(siblings[i]) === speech) return readMark(siblings[i]);
+    }
+    return DEFAULT_MARK;
   }
 
-  /** What a group is marked with, from its first card; the default if empty. */
-  private groupMark(parent: LoroTreeNode | undefined, speech: number): Mark {
-    const first = this.groupNodes(parent, speech)[0];
-    return first ? readMark(first) : DEFAULT_MARK;
-  }
-
-  /** How the card's group is marked. */
+  /** How the card's own run is marked — see `Mark`. */
   markOf(id: string): Mark {
     return readMark(this.requireNode(id));
   }
 
   /**
-   * Mark the cursor's whole group, not just the card it was asked about — the
-   * mark is a fact about the run and every card in it has to agree, or the
-   * numbering reads as "1, b, 3". One commit, so it is one undo step.
+   * Mark every card in `ids` the same way, in one commit — so a multi-card
+   * selection re-marks as one undo step rather than one per card.
+   *
+   * Unlike the old whole-group behaviour, this touches only the cards named:
+   * a run is no longer a fixed unit the flow enforces, just whatever a "1. 2.
+   * 3." reads as as you scan down a column — the keymap decides what counts
+   * as "the selection" (see `selectedIds` in commands.ts), not this method.
    */
-  setMark(id: string, mark: Mark): void {
+  setMarks(ids: string[], mark: Mark): void {
     this.markCursor();
-    const node = this.requireNode(id);
     this.batch(() => {
-      for (const n of this.groupNodes(node.parent(), this.readSpeech(node))) {
-        n.data.set("mark", mark);
+      for (const id of ids) {
+        if (this.has(id)) this.requireNode(id).data.set("mark", mark);
       }
     });
+  }
+
+  /**
+   * The raw children of `parent` — or the roots, if null — in the order Loro
+   * itself keeps: every speech mixed together, the same list `index` values
+   * from `resolve`/`move` are positions in. For computing an absolute
+   * insertion point (reordering a selection); nothing that walks the argument
+   * tree for rendering should need it.
+   */
+  childrenOf(parent: string | null): string[] {
+    const list = parent ? (this.requireNode(parent).children() ?? []) : this.tree.roots();
+    return list.map((n) => n.id);
   }
 
   /**
