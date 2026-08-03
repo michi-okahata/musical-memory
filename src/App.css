@@ -1,7 +1,7 @@
 :root {
-  font-family: Arial, Helvetica, sans-serif;
-  font-size: 16px;
-  line-height: 24px;
+  font-family: sans-serif;
+  font-size: 11px;
+  line-height: 1.4;
   font-weight: 400;
 
   font-synthesis: none;
@@ -16,20 +16,26 @@
   /* ---- flow design tokens ---------------------------------------------
      Everything static about a card lives here. Per-node values the layout
      computes (grid column / row / span) stay inline in the component. */
-  --card-bg: #ffffff;
+  --card-bg: #f6f6f6;
   /* The sheet MUST match the card surface. Reserved cells (a row inflated by
      a tall neighbour) are painted by the sheet — if the two colours differ,
      every one of them reappears as a visible gap. */
   --sheet: var(--card-bg);
   --card-fg: #0f0f0f;
-  --card-hover: #f2f5ff;
-  --card-pad: 2px 2px;
-  --card-font-size: 12px;
+  --card-hover: #f6f6f6;
   --card-line-height: 1.35;
   --cursor: #c300ff;
   --cursor-ring: rgba(230, 0, 255, 0.5);
   --muted: #9a9a9a;
   --placeholder: #aaaaaa;
+  --card-border: #0f0f0f;
+  --rule: #d0d0d0;
+  --status-height: 20px;
+  /* The fill of a card in a collapsed speech; its size is zoomed, below. */
+  --collapsed-fill: #d4d4d4;
+  /* How close the cursor may get to the top or bottom before the sheet
+     scrolls to keep it in comfortable view. */
+  --scroll-keepout: 25vh;
 }
 
 /* Skip for now
@@ -55,42 +61,207 @@
 
 /* ---- page ------------------------------------------------------------ */
 .app {
-  padding: 0px;
+  padding: 0;
+  /* Clear of the status line, which is pinned over the bottom of the sheet. */
+  padding-bottom: var(--status-height);
   text-align: left;
+
+  /* ---- zoom -----------------------------------------------------------
+     Every metric the sheet is drawn at, in terms of one multiplier, which
+     `App` sets inline from the editor state (the 1 below is the fallback,
+     and the size the flow is authored at). The authored pixel values are
+     unchanged — they have only moved inside a calc().
+
+     A flow is typed small enough that "readable across a table" and "a
+     whole round on screen" are genuinely different sheets, and zoom is how
+     you get from one to the other. So it is the type *and* everything bound
+     to it: shrink the font alone and the number gutter, the padding and the
+     collapsed marks stay put, and the sheet comes apart.
+
+     Declared here rather than at `:root` because a custom property is
+     substituted where it is declared, not where it is used: written at
+     `:root`, `var(--zoom)` would read the root's own value and never see
+     the one set on this element. Two metrics can't be expressed this way at
+     all — see `scaled` in flow_view.tsx. */
+  --zoom: 1;
+  --card-font-size: calc(10px * var(--zoom));
+  /* Tight, and asymmetric: the 3px on the left is the whole distance between
+     the rule and the first letter, and it is doing real work at 10px type. */
+  --card-pad: 0 calc(2px * var(--zoom)) 0 calc(3px * var(--zoom));
+  /* One digit at card size. Reserved in every cell so a column's left edge is
+     straight whether or not its cards are numbered. */
+  --num-width: calc(8px * var(--zoom));
+  /* How tall the rectangle standing in for a card in a collapsed speech is. */
+  --collapsed-mark: calc(11px * var(--zoom));
+  --column-gap: calc(6px * var(--zoom));
+  /* The speech names, and what they shrink to once collapsed. */
+  --header-font-size: calc(11px * var(--zoom));
+  --header-collapsed-font-size: calc(8px * var(--zoom));
 }
 
-.app__hint {
-  margin: 0 0 12px;
-  font-size: 13px;
+/* ---- status line ----------------------------------------------------- */
+.app__status {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: var(--status-height);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 6px;
+  font-size: 10px;
   color: var(--muted);
+  background: var(--sheet);
+  border-top: 1px solid var(--rule);
+}
+
+/* Which mode is on, if any. Last on the line, where it doesn't shift the
+   hints around as it appears and disappears. */
+.app__mode {
+  margin-left: auto;
+  padding: 0 4px;
+  color: var(--cursor);
+  border: 1px solid var(--cursor-ring);
+}
+
+/* The command line, sharing the status line's type so opening it reads as the
+   line changing mode rather than a box appearing over it. */
+.app__cmdline {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  color: var(--card-fg);
+}
+
+.app__cmd {
+  flex: 1;
+  border: 0;
+  outline: none;
+  background: none;
+  font: inherit;
+  color: inherit;
+  padding: 0 1px;
+}
+
+/* The pending count, echoed back so a half-typed `1` of `10j` is visible. */
+.app__count {
+  min-width: 2ch;
+  font-variant-numeric: tabular-nums;
+  color: var(--cursor);
 }
 
 /* ---- flow grid ------------------------------------------------------- */
 .flow-grid {
   display: grid;
   grid-auto-rows: min-content;
-  gap: 4px;
+  /* Row gap is set inline — `measureRows` has to know it. */
+  column-gap: var(--column-gap);
   align-items: start;
-  /* White sheet: reserved/empty cells read as blank paper rather than dark
-     gaps, while parents keep their natural height. */
 }
 
 .flow-header {
   grid-row: 1;
   font-weight: 600;
-  padding: 2px 10px;
+  font-size: var(--header-font-size);
+  padding: 1px 0 2px calc(var(--num-width) + 3px * var(--zoom));
   color: var(--card-fg);
+  /* Stays put on a long flow; the sheet scrolls under it. */
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--sheet);
+  border-bottom: 1px solid var(--rule);
+  /* The underline has to read as one line across the whole sheet, so every
+     header fills the row rather than taking its own text's height — a
+     collapsed speech sets its label smaller, and left alone that would step
+     its border up by a few pixels. Labels sit on the bottom so the different
+     sizes still share a line. */
+  align-self: stretch;
+  display: flex;
+  align-items: flex-end;
 }
 
-/* Parents keep their natural height instead of filling their row span. */
+/* Parents keep their natural height instead of filling their row span. The
+   number sits in a fixed gutter to the left of the card's rule. */
 .flow-cell {
   align-self: start;
+  display: flex;
+  align-items: flex-start;
+  /* Keep the cursor off the edges: the sheet starts scrolling once the card
+     gets within a quarter of the window of the top or bottom, so you can
+     always see what you're flowing into.
+     This is the whole implementation — `scrollIntoView({block: "nearest"})`
+     scrolls only far enough to fit the element *plus its scroll margin*, so a
+     quarter-window margin means no scrolling at all while the card sits in the
+     middle half, and a minimal correction the moment it leaves. The `max()`
+     keeps a card clear of the sticky header and the status line on a window
+     too short for the quarter to cover them. */
+  scroll-margin-top: max(var(--scroll-keepout), 24px);
+  scroll-margin-bottom: max(
+    var(--scroll-keepout),
+    calc(var(--status-height) + 4px)
+  );
+}
+
+/* ---- focus mode -------------------------------------------------------
+   A collapsed speech keeps only its shape: one rectangle per card, in the row
+   the card occupies, so you can still see where the answers fell. `font-size:
+   0` is what removes the text — it takes the line boxes with it, so the fixed
+   height below is the card's whole contribution and a collapsed column can
+   never inflate a row the focused speeches share. */
+.flow-cell.is-collapsed .flow-card {
+  height: var(--collapsed-mark);
+  font-size: 0;
+  overflow: hidden;
+  background: var(--collapsed-fill);
+  cursor: pointer;
+}
+
+.flow-cell.is-collapsed .flow-card:hover {
+  background: var(--muted);
+}
+
+/* No room for the number beside a 24px column, and nothing to number against. */
+.flow-cell.is-collapsed .flow-num {
+  display: none;
+}
+
+.flow-header.is-collapsed {
+  color: var(--muted);
+  font-weight: 400;
+  font-size: var(--header-collapsed-font-size);
+  padding-left: calc(2px * var(--zoom));
+  overflow: hidden;
+}
+
+.flow-num {
+  flex: 0 0 var(--num-width);
+  font-size: var(--card-font-size);
+  line-height: var(--card-line-height);
+  color: var(--muted);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+}
+
+/* Where one argument ends and the next begins. Zero height so it can't
+   disturb the measured row tracks; centred in the row gap. */
+.flow-rule {
+  align-self: start;
+  height: 0;
+  margin-top: -1px;
+  border-top: 1px solid var(--rule);
+  pointer-events: none;
+  z-index: 1;
 }
 
 /* ---- card ------------------------------------------------------------ */
 .flow-card {
-  border: 1px solid var(--card-border);
-  border-radius: 4px;
+  /* `border-left` alone would leave a textarea's UA border on the other three
+     sides, and the edit box would sit a couple of pixels off the card. */
+  border: 0;
+  border-left: 1px solid var(--card-border);
   padding: var(--card-pad);
   font-family: inherit;
   font-size: var(--card-font-size);
@@ -103,6 +274,8 @@
   box-sizing: border-box;
   white-space: pre-wrap;
   overflow-wrap: break-word;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .flow-card:hover {
@@ -112,8 +285,10 @@
 .flow-card.is-cursor {
   border-color: var(--cursor);
   box-shadow: 0 0 0 2px var(--cursor-ring);
-  /* gap:0 means neighbours would clip the ring — lift it above them */
-  position: relative;
+  /* Tight gaps mean neighbours would clip the ring — lift it above them. A
+     flex item takes z-index without being positioned, and it must stay
+     unpositioned: the editor stacks its layers with `position: absolute`, and
+     a `position: relative` here would outrank that on specificity. */
   z-index: 1;
 }
 
@@ -122,19 +297,60 @@
   outline-offset: -2px;
 }
 
+.flow-card__placeholder {
+  color: var(--placeholder);
+}
+
+/* ---- card editor ------------------------------------------------------
+   Three superimposed layers (see card_editor.tsx). The sizer is the only one
+   in flow; the other two are stretched over it, so all three wrap alike. */
+.flow-editor {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  /* Same lift as a cursored card: this only ever renders on the cursor. */
+  z-index: 1;
+}
+
+.flow-editor__sizer {
+  /* Holds the box open at the height of the real text, and nothing else. */
+  visibility: hidden;
+}
+
+.flow-editor__ghost,
+.flow-card--edit {
+  position: absolute;
+  inset: 0;
+}
+
+.flow-editor__ghost {
+  overflow: hidden;
+  pointer-events: none;
+  background: none;
+  /* The suggestion is drawn in place, which means everything around it has to
+     be laid out and not painted. */
+  color: var(--placeholder);
+}
+
+.flow-editor__hidden {
+  visibility: hidden;
+}
+
+.flow-editor__suggest {
+  color: var(--muted);
+}
+
 /* Editing variant — same box, textarea resets only. */
 .flow-card--edit {
   display: block;
-  width: 100%;
   resize: none;
   outline: none;
   cursor: text;
+  overflow: hidden;
+  /* Transparent, so the suggestion behind it shows through. */
+  background: transparent;
 }
 
 .flow-card--edit:hover {
-  background: var(--card-bg);
-}
-
-.flow-card--placeholder {
-  color: var(--placeholder);
+  background: transparent;
 }

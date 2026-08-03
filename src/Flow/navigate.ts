@@ -11,7 +11,43 @@ export type Motion = "h" | "j" | "k" | "l";
  *
  * Returns the id to move the cursor to (unchanged if there's nowhere to go).
  */
+
+const mid = (p: Placed) => p.row + p.span / 2;
+
+/** The card in `col` sitting closest, vertically, to `to`. */
+function nearestInColumn(
+  placed: Placed[],
+  col: number,
+  to: number,
+): Placed | undefined {
+  let best: Placed | undefined;
+  for (const p of placed) {
+    if (p.col !== col) continue;
+    if (!best || Math.abs(mid(p) - to) < Math.abs(mid(best) - to)) best = p;
+  }
+  return best;
+}
+
+/**
+ * Move the cursor `count` steps. Stops early where the motion runs out of grid
+ * rather than wrapping — `10j` in a short column lands on its last card.
+ */
 export function moveCursor(
+  placed: Placed[],
+  currentId: string | null,
+  motion: Motion,
+  count = 1,
+): string | null {
+  let id = currentId;
+  for (let i = 0; i < Math.max(1, count); i++) {
+    const next = step(placed, id, motion);
+    if (next === id) break;
+    id = next;
+  }
+  return id;
+}
+
+function step(
   placed: Placed[],
   currentId: string | null,
   motion: Motion,
@@ -23,9 +59,6 @@ export function moveCursor(
     // No cursor yet: land on the top-left-most card.
     return [...placed].sort((a, b) => a.col - b.col || a.row - b.row)[0].id;
   }
-
-  const mid = (p: Placed) => p.row + p.span / 2;
-  const curMid = mid(cur);
 
   if (motion === "j" || motion === "k") {
     const column = placed
@@ -44,12 +77,25 @@ export function moveCursor(
       : columns.filter((c) => c < cur.col).reverse();
 
   for (const c of candidates) {
-    const inColumn = placed.filter((p) => p.col === c);
-    if (inColumn.length === 0) continue;
-    inColumn.sort(
-      (a, b) => Math.abs(mid(a) - curMid) - Math.abs(mid(b) - curMid),
-    );
-    return inColumn[0].id;
+    const next = nearestInColumn(placed, c, mid(cur));
+    if (next) return next.id;
   }
   return cur.id;
+}
+
+/**
+ * Jump straight to a speech, keeping roughly the same place down the sheet.
+ *
+ * Stepping `l` across six columns to reach the 2NR is the wrong tool when the
+ * round is already in the 2NR; naming the speech is a single keystroke.
+ * Returns the cursor unchanged if that speech has nothing in it yet.
+ */
+export function moveToColumn(
+  placed: Placed[],
+  currentId: string | null,
+  col: number,
+): string | null {
+  if (placed.length === 0) return null;
+  const cur = placed.find((p) => p.id === currentId);
+  return nearestInColumn(placed, col, cur ? mid(cur) : 0)?.id ?? currentId;
 }

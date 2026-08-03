@@ -27,14 +27,16 @@ const UNDO_MERGE_MS = 500;
  * keybinding, a drag-and-drop drop target, or a paste can each compute a
  * position and hand it to the same `add`.
  *
- * `root` anchors after the whole tree `near` belongs to (null = append at the
- * end); `after` / `before` anchor against `id` itself among its siblings.
+ * `root` anchors against the whole tree `near` belongs to — past the end of it,
+ * or `before` it, which is how an overview gets written above an argument that
+ * is already on the sheet. A null `near` means the far end of the flow.
+ * `after` / `before` anchor against `id` itself among its siblings.
  */
 export type Anchor =
   | { under: string }
   | { after: string }
   | { before: string }
-  | { root: string | null };
+  | { root: string | null; before?: boolean };
 
 export interface ArgumentInit {
   text?: string;
@@ -61,6 +63,12 @@ export class Flow {
   private readonly tree: LoroTree;
   private readonly history: UndoManager;
   private txDepth = 0;
+  /** Reads the editor's cursor, once `trackCursor` has been called. */
+  private readCursor: (() => string | null) | null = null;
+  /** The cursor's whereabouts as of the mutation being committed. */
+  private mark = "";
+  /** The mark carried by the step just popped off the undo/redo stack. */
+  private popped = "";
 
   constructor(doc: LoroDoc = new LoroDoc()) {
     this.doc = doc;
@@ -72,17 +80,106 @@ export class Flow {
   }
 
   /**
-   * Undo the last local change. Returns false if there was nothing to undo.
+   * Remember where the cursor is with every change, so undo can put it back.
+   * `read` is the editor's answer to "which card is the cursor on?".
+   *
+   * Returns a function that stops the tracking.
+   */
+  trackCursor(read: () => string | null): () => void {
+    this.readCursor = read;
+    // Loro's step metadata is a plain `Value`; a string keeps it simple, and
+    // "" stands in for "we don't know where the cursor was".
+    this.history.setOnPush(() => ({ value: this.mark, cursors: [] }));
+    this.history.setOnPop((_isUndo, meta) => {
+      this.popped = typeof meta.value === "string" ? meta.value : "";
+    });
+    return () => {
+      this.readCursor = null;
+      this.history.setOnPush(undefined);
+      this.history.setOnPop(undefined);
+    };
+  }
+
+  /**
+   * Note where the cursor is *before* a mutation touches the tree.
+   *
+   * The timing is the whole point. Loro pushes its undo step when the change
+   * commits, by which time a deletion has already taken the cursor's card with
+   * it — there'd be nothing left to describe. Every mutator calls this on the
+   * way in instead, while the tree still holds the answer.
+   */
+  private markCursor(): void {
+    const id = this.readCursor?.() ?? null;
+    this.mark = id && this.has(id) ? `${id}#${this.pathOf(id).join(",")}` : "";
+  }
+
+  /**
+   * A card's structural position: its index among the roots, then among its
+   * parent's children, and so on down.
+   *
+   * Recorded next to the id because the id alone does not survive an undo.
+   * Loro reverses a deletion by *re-creating* the subtree, and a created node
+   * takes a fresh `TreeID` — so the card the user is looking at after undo has
+   * a different name than the one that went away. Its place in the flow, on
+   * the other hand, is exactly the one it left.
+   */
+  private pathOf(id: string): number[] {
+    const path: number[] = [];
+    let node: LoroTreeNode | undefined = this.tree.getNodeByID(id as TreeID);
+    while (node) {
+      path.unshift(node.index() ?? 0);
+      node = node.parent();
+    }
+    return path;
+  }
+
+  /** The card now sitting at `path`, if anything does. */
+  private atPath(path: number[]): string | null {
+    let siblings = this.tree.roots();
+    let node: LoroTreeNode | undefined;
+    for (const i of path) {
+      node = siblings[i];
+      if (!node) return null;
+      siblings = node.children() ?? [];
+    }
+    return node?.id ?? null;
+  }
+
+  /** Turn a mark back into a card: by id if it still names one, else by place. */
+  private locate(mark: string): string | null {
+    const [id, path] = mark.split("#");
+    if (id && this.has(id)) return id;
+    if (!path) return null;
+    return this.atPath(path.split(",").filter(Boolean).map(Number));
+  }
+
+  /**
+   * Undo the last local change.
+   *
+   * Returns the card the cursor should go to — where the undone change was
+   * made — or null if that isn't known, or `undefined` when there was nothing
+   * to undo at all. The caller has to tell those last two apart.
    *
    * Only *your* edits are undone — a peer's concurrent changes are left in
    * place, which is what you want when two people flow the same round.
    */
-  undo(): boolean {
-    return this.history.undo();
+  undo(): string | null | undefined {
+    return this.step("undo");
   }
 
-  redo(): boolean {
-    return this.history.redo();
+  redo(): string | null | undefined {
+    return this.step("redo");
+  }
+
+  private step(direction: "undo" | "redo"): string | null | undefined {
+    // The opposite stack gets a step pushed during this call; mark first so it
+    // carries the cursor as it is now, not as it was two changes ago.
+    this.markCursor();
+    this.popped = "";
+    const moved = direction === "undo" ? this.history.undo() : this.history.redo();
+    if (!moved) return undefined;
+    // Resolved only now: `locate` has to read the tree as the undo left it.
+    return this.locate(this.popped);
   }
 
   canUndo(): boolean {
@@ -121,6 +218,7 @@ export class Flow {
 
   /** The one place an argument is created. Every add* wrapper routes here. */
   add(anchor: Anchor, init: ArgumentInit = {}): TreeID {
+    this.markCursor();
     const at = this.resolve(anchor);
     const node = at.parent
       ? at.parent.createNode(at.index)
@@ -148,14 +246,24 @@ export class Flow {
   }
 
   /**
-   * Start a new argument tree (a root) in `speech`, placed after the tree that
-   * `near` belongs to. Passing null appends it to the end.
+   * Start a new argument tree (a root) in `speech`, placed after — or before —
+   * the whole tree that `near` belongs to. Passing null puts it at the end of
+   * the flow, or at the top when `where` is "before".
+   *
+   * Going *before* is not symmetry for its own sake: an overview is written
+   * once the argument it overviews is already on the sheet, and it belongs
+   * above it.
    *
    * Unlike `addResponse`, the new argument answers nothing — it's a fresh
    * top-level argument that can sit in any speech column, not just the 1AC.
    */
-  addRoot(near: string | null, text: string, speech: number): TreeID {
-    return this.add({ root: near }, { text, speech });
+  addRoot(
+    near: string | null,
+    text: string,
+    speech: number,
+    where: "after" | "before" = "after",
+  ): TreeID {
+    return this.add({ root: near, before: where === "before" }, { text, speech });
   }
 
   /** Turn an `Anchor` into a concrete parent + slot + default column. */
@@ -167,11 +275,12 @@ export class Flow {
 
     if ("root" in anchor) {
       const near = anchor.root;
-      let index: number | undefined;
+      // No anchor: append, or — going before — start the flow.
+      let index: number | undefined = anchor.before ? 0 : undefined;
       if (near && this.has(near)) {
         const rootId = this.rootIdOf(near);
         const i = this.tree.roots().findIndex((r) => r.id === rootId);
-        if (i >= 0) index = i + 1;
+        if (i >= 0) index = anchor.before ? i : i + 1;
       }
       return { index, speech: 0 };
     }
@@ -186,11 +295,13 @@ export class Flow {
   }
 
   setText(id: string, text: string): void {
+    this.markCursor();
     this.requireNode(id).data.set("text", text);
     this.commit();
   }
 
   setSpeech(id: string, speech: number): void {
+    this.markCursor();
     this.requireNode(id).data.set("speech", speech);
     this.commit();
   }
@@ -204,12 +315,14 @@ export class Flow {
    * doesn't change just because we corrected what it answers.
    */
   move(id: string, newParent?: string, index?: number): void {
+    this.markCursor();
     this.tree.move(id as TreeID, newParent as TreeID | undefined, index);
     this.commit();
   }
 
   /** Delete an argument and everything responding to it. */
   remove(id: string): void {
+    this.markCursor();
     this.tree.delete(id as TreeID);
     this.commit();
   }

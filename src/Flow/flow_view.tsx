@@ -1,29 +1,69 @@
-import React, { useLayoutEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { layoutFlow, measureRows } from "./layout_engine";
-import type { Argument, Placed } from "./types";
+import { FOCUS_REACH, type Argument, type Placed, type Speech } from "./types";
 
-// TODO
-// get rid of space on side
-// color? how to maximize visual information
+/**
+ * The row gap lives here rather than in the stylesheet because the row heights
+ * are computed, not authored: `measureRows` has to count the gaps a spanning
+ * card covers. The column gap is pure presentation and stays in CSS.
+ */
+const ROW_GAP = 2;
+
+/**
+ * Zoom scales the sheet through a CSS custom property (see the stylesheet), but
+ * these two metrics can't ride along: the row gap has to be a number because
+ * `measureRows` does arithmetic with it, and the collapsed width has to be a
+ * number because it goes into a track list beside `fr` units. Both are scaled
+ * here instead, from the same multiplier, so a zoomed sheet stays in proportion.
+ */
+const scaled = (px: number, zoom: number) => px * zoom;
+
+/**
+ * How wide a speech gets once it's out of focus: a sliver, with its cards drawn
+ * as rectangles rather than text.
+ *
+ * Fixed pixels rather than a fraction, deliberately. A share of the width would
+ * grow with the window, and the whole point is to hand the sheet to the three
+ * speeches in focus — a collapsed speech should cost the same on any screen.
+ * What survives is the shape of the flow: which arguments got answered where.
+ */
+const COLLAPSED_PX = 24;
+
+const inFocus = (col: number, focus: number | null) =>
+  focus === null || Math.abs(col - focus) <= FOCUS_REACH;
 
 interface DebateFlowProps {
   roots: Argument[];
-  speechCount: number;
-  speechLabels?: string[];
+  /** The columns, in order: what each speech is called and how wide it gets. */
+  speeches: Speech[];
+  /**
+   * The speech to build the sheet around — the rest are narrowed. Null leaves
+   * every speech at its natural width.
+   */
+  focus?: number | null;
   renderArgument?: (arg: Argument) => React.ReactNode;
   /**
    * The layout for `roots`. Optional — pass it when the caller already needs
    * the layout (for cursor navigation, say) so it isn't computed twice.
    */
   placed?: Placed[];
+  /** The card to keep on screen. The sheet scrolls to follow it. */
+  cursorId?: string | null;
+  /**
+   * How large to draw the sheet, as a multiple of its authored size. The type
+   * itself is scaled in CSS; this is here for the metrics that can't be.
+   */
+  zoom?: number;
 }
 
 export function DebateFlow({
   roots,
-  speechCount,
-  speechLabels,
+  speeches,
   renderArgument,
   placed: placedProp,
+  cursorId,
+  focus = null,
+  zoom = 1,
 }: DebateFlowProps): React.ReactElement {
   const ownPlaced = useMemo(
     () => (placedProp ? [] : layoutFlow(roots)),
@@ -47,6 +87,9 @@ export function DebateFlow({
   const gridRef = useRef<HTMLDivElement | null>(null);
   const [rowHeights, setRowHeights] = useState<number[]>([]);
 
+  const rowGap = scaled(ROW_GAP, zoom);
+  const collapsedPx = scaled(COLLAPSED_PX, zoom);
+
   useLayoutEffect(() => {
     const remeasure = () => {
       const heights = new Map<string, number>();
@@ -54,7 +97,7 @@ export function DebateFlow({
         const el = cellRefs.current.get(p.id);
         if (el) heights.set(p.id, el.getBoundingClientRect().height);
       }
-      const next = measureRows(placed, heights);
+      const next = measureRows(placed, heights, rowGap);
       setRowHeights((prev) =>
         prev.length === next.length && prev.every((h, i) => Math.abs(h - next[i]) < 0.5)
           ? prev
@@ -67,30 +110,74 @@ export function DebateFlow({
     const ro = new ResizeObserver(remeasure);
     if (gridRef.current) ro.observe(gridRef.current);
     return () => ro.disconnect();
-  }, [placed]);
+    // `focus` is a dependency and the observer cannot stand in for it: changing
+    // focus redistributes width *between* columns without changing the grid's
+    // own size, so nothing resizes and the rows would keep the heights they
+    // were given at the previous set of column widths.
+    //
+    // `rowGap` carries zoom, and it is a dependency for the same reason, more
+    // sharply: zooming changes every card's height but not the grid's width,
+    // and the grid's own height is whatever these row tracks say it is — so
+    // the observer would be waiting on a resize that only this effect can
+    // cause. Left out, the sheet would change type size and keep the old rows.
+  }, [placed, focus, rowGap]);
 
-  const headerOffset = speechLabels ? 1 : 0;
+  // Keep the cursor on screen. `nearest` means this only scrolls when the card
+  // has actually gone off the edge — moving around inside the visible sheet
+  // doesn't drag the page around. Re-runs on `rowHeights` too, since a card
+  // that grows while being typed in can push itself out of frame.
+  useEffect(() => {
+    if (!cursorId) return;
+    cellRefs.current
+      .get(cursorId)
+      ?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [cursorId, rowHeights]);
+
+  const headerOffset = 1;
   const gridTemplateRows = rowHeights.length
-    ? [...(headerOffset ? ["auto"] : []), ...rowHeights.map((h) => `${h}px`)].join(" ")
+    ? ["auto", ...rowHeights.map((h) => `${h}px`)].join(" ")
     : undefined;
 
   return (
-    // Only the column track list is inline — it depends on `speechCount`.
-    // Every speech column shares the width equally (minmax(0,1fr) lets them
-    // shrink below content width) so a full policy round stays in frame.
+    // Only the track lists are inline — they depend on the speeches. Every
+    // column is `minmax(0, …)` so it can shrink below its content width and a
+    // full policy round stays in frame.
     <div
       ref={gridRef}
       className="flow-grid"
       style={{
-        gridTemplateColumns: `repeat(${speechCount}, minmax(0, 1fr))`,
+        gridTemplateColumns: speeches
+          .map((s, i) =>
+            inFocus(i, focus)
+              ? `minmax(0, ${s.weight}fr)`
+              : `${collapsedPx}px`,
+          )
+          .join(" "),
         gridTemplateRows,
+        rowGap: `${rowGap}px`,
       }}
     >
-      {speechLabels?.map((label, i) => (
-        <div key={`h-${i}`} className="flow-header" style={{ gridColumn: i + 1 }}>
-          {label}
+      {speeches.map((speech, i) => (
+        <div
+          key={`h-${i}`}
+          className={`flow-header${inFocus(i, focus) ? "" : " is-collapsed"}`}
+          style={{ gridColumn: i + 1 }}
+        >
+          {speech.label}
         </div>
       ))}
+
+      {/* A rule across the sheet wherever a new argument starts, so separate
+          positions read as separate rather than as one long column. */}
+      {placed
+        .filter((p) => p.depth === 0 && p.row > 0)
+        .map((p) => (
+          <div
+            key={`r-${p.id}`}
+            className="flow-rule"
+            style={{ gridColumn: "1 / -1", gridRow: p.row + 1 + headerOffset }}
+          />
+        ))}
 
       {placed.map((p) => {
         const arg = byId.get(p.id)!;
@@ -101,7 +188,13 @@ export function DebateFlow({
               if (el) cellRefs.current.set(p.id, el);
               else cellRefs.current.delete(p.id);
             }}
-            className="flow-cell"
+            // A collapsed card is drawn as a fixed-height rectangle (see the
+            // stylesheet), which is also what keeps the rows honest: left to
+            // rewrap in a 24px column it would run enormously tall, and rows
+            // are shared, so it would drag the speech you're working in down
+            // the page with it. The card element itself stays — clicking a
+            // rectangle still puts the cursor there, which re-focuses it.
+            className={`flow-cell${inFocus(p.col, focus) ? "" : " is-collapsed"}`}
             // Placement comes from `layoutFlow` — inherently per-node, so it
             // cannot live in a stylesheet.
             style={{
@@ -109,6 +202,10 @@ export function DebateFlow({
               gridRow: `${p.row + 1 + headerOffset} / span ${p.span}`,
             }}
           >
+            {/* The gutter is always drawn, empty or not: a numbered card and
+                an unnumbered one in the same column must start at the same
+                left edge. */}
+            <span className="flow-num">{p.index ?? ""}</span>
             {renderArgument ? renderArgument(arg) : <DefaultCard text={arg.text} />}
           </div>
         );

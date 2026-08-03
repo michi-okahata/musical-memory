@@ -28,24 +28,51 @@ function computeSpans(roots: Argument[]): Map<string, number> {
   return spans;
 }
 
+/** How many siblings sit in each speech column, keyed by column. */
+function groupSizes(siblings: Argument[]): Map<number, number> {
+  const sizes = new Map<number, number>();
+  for (const s of siblings) sizes.set(s.speech, (sizes.get(s.speech) ?? 0) + 1);
+  return sizes;
+}
+
 export function layoutFlow(roots: Argument[]): Placed[] {
   const spans = computeSpans(roots);
   const placed: Placed[] = [];
 
-  const place = (node: Argument, row: number): void => {
-    placed.push({ id: node.id, col: node.speech, row, span: spans.get(node.id)! });
+  const place = (
+    node: Argument,
+    row: number,
+    depth: number,
+    index: number | null,
+  ): void => {
+    placed.push({
+      id: node.id,
+      col: node.speech,
+      row,
+      span: spans.get(node.id)!,
+      depth,
+      index,
+    });
 
     const cursors = new Map<number, number>(); // per-column row cursor
+    const seq = new Map<number, number>(); // per-column "1., 2., 3." counter
+    const sizes = groupSizes(node.children);
     for (const child of node.children) {
       const r = cursors.get(child.speech) ?? row;
-      place(child, r);
+      const n = (seq.get(child.speech) ?? 0) + 1;
+      seq.set(child.speech, n);
+      place(child, r, depth + 1, sizes.get(child.speech)! > 1 ? n : null);
       cursors.set(child.speech, r + spans.get(child.id)!);
     }
   };
 
   let nextRow = 0;
+  const seq = new Map<number, number>();
+  const sizes = groupSizes(roots);
   for (const root of roots) {
-    place(root, nextRow);
+    const n = (seq.get(root.speech) ?? 0) + 1;
+    seq.set(root.speech, n);
+    place(root, nextRow, 0, sizes.get(root.speech)! > 1 ? n : null);
     nextRow += spans.get(root.id)!;
   }
   return placed;
@@ -60,10 +87,15 @@ export function layoutFlow(roots: Argument[]): Placed[] {
  * instead: each row takes its height from the single-row cards in it, and a
  * spanning card's leftover height is added to its LAST row only. Siblings stay
  * flush and the slack falls after the last one.
+ *
+ * `rowGap` is the grid's row gap. A card spanning n rows also covers the n-1
+ * gaps between them, so counting them is the difference between a tight sheet
+ * and one that grows a few pixels of slack under every tall argument.
  */
 export function measureRows(
   placed: Placed[],
   heights: Map<string, number>,
+  rowGap = 0,
 ): number[] {
   const rowCount = placed.reduce((n, p) => Math.max(n, p.row + p.span), 0);
   const rows = new Array<number>(rowCount).fill(0);
@@ -74,7 +106,7 @@ export function measureRows(
 
   // Shortest spans first, so nested spans settle before the ones containing them.
   for (const p of [...placed].filter((x) => x.span > 1).sort((a, b) => a.span - b.span)) {
-    let total = 0;
+    let total = rowGap * (p.span - 1);
     for (let r = p.row; r < p.row + p.span; r++) total += rows[r];
     const deficit = (heights.get(p.id) ?? 0) - total;
     if (deficit > 0) rows[p.row + p.span - 1] += deficit;
