@@ -134,8 +134,13 @@ export function DebateFlow({
   }, [cursorId, rowHeights]);
 
   const headerOffset = 1;
+  // A `1fr` track after the last card, holding no cards and existing only to
+  // take up whatever height is left: it is what lets the side bands run to the
+  // bottom of the window on a flow that doesn't fill it. Without it the grid
+  // is exactly as tall as its cards, and the bands stop in mid-air at the last
+  // row — which reads as the sheet ending rather than the speech being empty.
   const gridTemplateRows = rowHeights.length
-    ? ["auto", ...rowHeights.map((h) => `${h}px`)].join(" ")
+    ? ["auto", ...rowHeights.map((h) => `${h}px`), "1fr"].join(" ")
     : undefined;
 
   return (
@@ -157,10 +162,31 @@ export function DebateFlow({
         rowGap: `${rowGap}px`,
       }}
     >
+      {/* The side bands, first so everything else paints over them. Each one
+          runs the full height of its column, filler track included: the empty
+          parts of a speech are as much a part of reading it as the cards are.
+
+          `1 / -1` needs an explicit grid to reach the end of, and there isn't
+          one on the first paint — before the cards are measured there are no
+          row tracks, so the band spans the header row alone until the measure
+          lands a tick later. */}
+      {speeches.map((speech, i) => (
+        <div
+          key={`b-${i}`}
+          className={`flow-band is-${speech.side}`}
+          style={{
+            gridColumn: i + 1,
+            gridRow: gridTemplateRows ? "1 / -1" : "1 / span 1",
+          }}
+        />
+      ))}
+
       {speeches.map((speech, i) => (
         <div
           key={`h-${i}`}
-          className={`flow-header${inFocus(i, focus) ? "" : " is-collapsed"}`}
+          className={`flow-header is-${speech.side}${
+            inFocus(i, focus) ? "" : " is-collapsed"
+          }`}
           style={{ gridColumn: i + 1 }}
         >
           {speech.label}

@@ -34,14 +34,35 @@ import "./App.css";
 // the two columns you refer back to most end up the hardest to read. Focus
 // mode is the answer to a crowded sheet instead. The knob stays because a
 // column's width is a real thing to want to tune.
+//
+// `side` is what the sheet shades by. The speeches alternate, so a sheet you
+// aren't reading closely still reads as a conversation rather than as seven
+// columns of text — and the answer to "where did the 2AC go" is a glance.
 const SPEECHES: Speech[] = [
-  { label: "1AC", weight: 1 },
-  { label: "1NC", weight: 1 },
-  { label: "2AC", weight: 1 },
-  { label: "Block", weight: 1 },
-  { label: "1AR", weight: 1 },
-  { label: "2NR", weight: 1 },
-  { label: "2AR", weight: 1 },
+  { label: "1AC", weight: 1, side: "aff" },
+  { label: "1NC", weight: 1, side: "neg" },
+  { label: "2AC", weight: 1, side: "aff" },
+  { label: "Block", weight: 1, side: "neg" },
+  { label: "1AR", weight: 1, side: "aff" },
+  { label: "2NR", weight: 1, side: "neg" },
+  { label: "2AR", weight: 1, side: "aff" },
+];
+
+// The keymap, as it appears on the status line: key, then what it does. A list
+// rather than prose so the line stays one shape — every key in the sheet's ink,
+// every gloss in the status line's grey, and the separators quieter than both.
+const HINTS: [key: string, does: string][] = [
+  ["hjkl", "move"],
+  [":2ac", "speech"],
+  ["a", "answer"],
+  ["o/O", "below/above"],
+  ["n/N", "new argument"],
+  ["i", "edit"],
+  ["Tab", "complete"],
+  ["f", "focus"],
+  ["+/-", "zoom"],
+  ["x", "delete"],
+  ["u", "undo"],
 ];
 
 // Typing writes through to the CRDT at most this often. Each write commits,
@@ -265,11 +286,13 @@ function App() {
             />
           </span>
         ) : (
-          <span>
-            <b>hjkl</b> move · <b>{":2ac"}</b> speech · <b>a</b> answer ·{" "}
-            <b>o</b>/<b>O</b> below/above · <b>n</b>/<b>N</b> new argument ·{" "}
-            <b>i</b> edit · <b>Tab</b> complete · <b>f</b> focus · <b>+</b>/
-            <b>-</b> zoom · <b>x</b> delete · <b>u</b> undo
+          <span className="app__hint">
+            {HINTS.map(([key, what], i) => (
+              <span key={key}>
+                {i > 0 && <i> · </i>}
+                <kbd>{key}</kbd> {what}
+              </span>
+            ))}
           </span>
         )}
         {/* Naming the pinned speech matters now that it doesn't follow the

@@ -40,9 +40,18 @@ export interface Placed {
  */
 export const FOCUS_REACH = 1;
 
+/** Which side of the debate gives a speech. Drawn as a shade, not a label. */
+export type Side = "aff" | "neg";
+
 /** A column of the sheet: one speech, and how much of the width it earns. */
 export interface Speech {
   label: string;
+  /**
+   * Whose speech it is. Carried on the speech rather than read out of the
+   * label, because the labels are a convention ("Block" says nothing about a
+   * side) and a different format would bring different ones.
+   */
+  side: Side;
   /**
    * Share of the sheet's width, relative to the other speeches. The speeches
    * read off a prepared document — the 1AC, the 1NC — get flowed in far less

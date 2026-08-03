@@ -1,5 +1,13 @@
 :root {
-  font-family: sans-serif;
+  /* Text is the interface, so the type is the one thing that gets to be
+     opinionated: the platform UI face for the flow itself (proportional wins
+     on words-per-column, which is the whole game at 10px), and a mono face
+     for the status line, where the point is that it looks like a terminal. */
+  --font-ui: ui-sans-serif, -apple-system, "SF Pro Text", "Segoe UI", system-ui,
+    sans-serif;
+  --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
+
+  font-family: var(--font-ui);
   font-size: 11px;
   line-height: 1.4;
   font-weight: 400;
@@ -10,60 +18,101 @@
   -moz-osx-font-smoothing: grayscale;
   -webkit-text-size-adjust: 100%;
 
-  color: #0f0f0f;
-  background-color: #f6f6f6;
+  color: var(--card-fg);
+  background-color: var(--sheet);
 
   /* ---- flow design tokens ---------------------------------------------
      Everything static about a card lives here. Per-node values the layout
-     computes (grid column / row / span) stay inline in the component. */
-  --card-bg: #f6f6f6;
-  /* The sheet MUST match the card surface. Reserved cells (a row inflated by
-     a tall neighbour) are painted by the sheet — if the two colours differ,
-     every one of them reappears as a visible gap. */
-  --sheet: var(--card-bg);
-  --card-fg: #0f0f0f;
-  --card-hover: #f6f6f6;
+     computes (grid column / row / span) stay inline in the component.
+
+     The palette is one hue — a violet-leaning neutral — plus a single accent
+     drawn from it. Nothing else is coloured, so the two things that *are* (the
+     cursor, and which side of the debate a column belongs to) don't have to
+     compete with anything to be seen. */
+
+  /* The page, and with it the affirmative columns: the sheet is the aff
+     surface, so only one side carries a shade and the other is simply paper.
+     See --band-neg. */
+  --sheet: #f8f7fa;
+  /* Cards are transparent — see .flow-card. That is what retires the old rule
+     that the sheet and the card surface had to be the same colour: a reserved
+     cell (a row inflated by a tall neighbour) and the card beside it are now
+     painted by the same element, so they cannot drift apart. */
+  --card-fg: #201f26;
   --card-line-height: 1.35;
-  --cursor: #c300ff;
-  --cursor-ring: rgba(230, 0, 255, 0.5);
-  --muted: #9a9a9a;
-  --placeholder: #aaaaaa;
-  --card-border: #0f0f0f;
-  --rule: #d0d0d0;
+
+  /* ---- sides ----------------------------------------------------------
+     Which side a column belongs to, as a shade rather than a colour: the neg
+     speeches sit on a band a few percent darker than the sheet, the aff ones
+     on the sheet itself. Big enough areas that a few percent is plenty, and
+     quiet enough that it never reads as a highlight — which the cursor is the
+     only thing entitled to do. */
+  --band-aff: var(--sheet);
+  --band-neg: #eeebf3;
+
+  /* The one accent. Purple, but the quiet end of it — a saturated magenta at
+     10px on paper is a shout, and the cursor has to sit on screen for an hour
+     at a time. */
+  --accent: #7a5ba6;
+  /* The cursor is a wash plus a hairline, not a ring: at these row heights a
+     2px ring is thicker than the gap between two cards. */
+  --cursor: var(--accent);
+  --cursor-bg: rgba(122, 91, 166, 0.13);
+  --cursor-ring: rgba(122, 91, 166, 0.38);
+  --accent-soft: rgba(122, 91, 166, 0.11);
+
+  --muted: #8b8794;
+  --placeholder: #aaa6b4;
+  /* The rule down the left of every card. Structural, and there is one per
+     card, so it stops short of black — at this density full black reads as a
+     grid of bars rather than as text with a margin. */
+  --card-border: #33303c;
+  --rule: #dcd8e4;
+  --card-hover: rgba(32, 31, 38, 0.04);
   --status-height: 20px;
-  /* The fill of a card in a collapsed speech; its size is zoomed, below. */
-  --collapsed-fill: #d4d4d4;
+  /* The fill of a card in a collapsed speech; its size is zoomed, below.
+     Translucent so one value reads correctly over either side's band. */
+  --collapsed-fill: rgba(51, 48, 60, 0.22);
+  --collapsed-hover: rgba(51, 48, 60, 0.42);
   /* How close the cursor may get to the top or bottom before the sheet
      scrolls to keep it in comfortable view. */
   --scroll-keepout: 25vh;
 }
 
-/* Skip for now
 /* Desktop apps should follow the OS theme. Only the tokens change; no
-   component needs to know which theme is active.
+   component needs to know which theme is active — and because the side bands
+   and the cursor are tokens too, they follow for free. */
 @media (prefers-color-scheme: dark) {
   :root {
-    color: #f6f6f6;
-    background-color: #2f2f2f;
+    --sheet: #1a191f;
+    --band-neg: #232028;
+    --card-fg: #e3e0e9;
+    --card-border: #4c4759;
+    --rule: #2e2b36;
+    --card-hover: rgba(227, 224, 233, 0.05);
 
-    /* only --card-bg is overridden; --sheet follows it automatically
-    --card-bg: #262626;
-    --card-fg: #ececec;
-    --card-border: #3d3d3d;
-    --card-hover: #2f3648;
-    --cursor: #6b93ff;
-    --cursor-ring: rgba(107, 147, 255, 0.35);
-    --muted: #8a8a8a;
-    --placeholder: #6b6b6b;
+    /* Lilac rather than violet: the same accent one step lighter and less
+       saturated, which is what it takes to stay quiet against a dark sheet. */
+    --accent: #b9a1e0;
+    --cursor: var(--accent);
+    --cursor-bg: rgba(185, 161, 224, 0.16);
+    --cursor-ring: rgba(185, 161, 224, 0.45);
+    --accent-soft: rgba(185, 161, 224, 0.14);
+
+    --muted: #837e91;
+    --placeholder: #6a6577;
+    --collapsed-fill: rgba(227, 224, 233, 0.22);
+    --collapsed-hover: rgba(227, 224, 233, 0.42);
   }
 }
-*/
 
 /* ---- page ------------------------------------------------------------ */
 .app {
-  padding: 0;
-  /* Clear of the status line, which is pinned over the bottom of the sheet. */
-  padding-bottom: var(--status-height);
+  /* A hair of side margin, so the number gutter of the first speech isn't
+     pressed against the window edge — and, at the other end, so the last
+     speech's band closes instead of running off the screen.
+     Clear of the status line at the bottom, which is pinned over the sheet. */
+  padding: 0 calc(5px * var(--zoom)) var(--status-height);
   text-align: left;
 
   /* ---- zoom -----------------------------------------------------------
@@ -110,19 +159,59 @@
   align-items: center;
   gap: 8px;
   padding: 0 6px;
+  font-family: var(--font-mono);
   font-size: 10px;
   color: var(--muted);
   background: var(--sheet);
   border-top: 1px solid var(--rule);
 }
 
+/* The hints: keys in the sheet's own ink, what they do in the status line's
+   muted grey, separators quieter still. Bold is what the line used to lean on
+   and it can't — at 10px a bold sans key is a smudge, so the emphasis is
+   carried by colour, which costs no weight.
+
+   Truncated rather than wrapped: the status line is one line tall, and the
+   sheet's bottom margin is reserved from that number. A narrow window drops
+   hints off the end (they're ordered roughly by how often you want them) —
+   wrapping would push them off the bottom of the screen instead. */
+.app__hint {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.app__hint kbd {
+  font: inherit;
+  color: var(--card-fg);
+}
+
+.app__hint i {
+  font-style: normal;
+  opacity: 0.45;
+  padding: 0 1px;
+}
+
 /* Which mode is on, if any. Last on the line, where it doesn't shift the
-   hints around as it appears and disappears. */
+   hints around as it appears and disappears. A soft chip rather than an
+   outline: one more hairline box on a screen made of hairlines reads as
+   structure, and this is a state. */
 .app__mode {
   margin-left: auto;
-  padding: 0 4px;
-  color: var(--cursor);
-  border: 1px solid var(--cursor-ring);
+  /* Never wraps and never shrinks: the hints give up their width first (they
+     truncate), because the modes are state and the hints are a reminder. */
+  flex: none;
+  white-space: nowrap;
+  padding: 1px 5px;
+  border-radius: 2px;
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* Two of them (focus and zoom) can be on at once; only the first pushes. */
+.app__mode ~ .app__mode {
+  margin-left: 0;
 }
 
 /* The command line, sharing the status line's type so opening it reads as the
@@ -155,15 +244,48 @@
 .flow-grid {
   display: grid;
   grid-auto-rows: min-content;
+  /* Down to the status line at least, so the trailing `1fr` track (see
+     flow_view.tsx) has height to give the side bands. The window less the
+     status line is exactly what `.app` reserves for the sheet. */
+  min-height: calc(100vh - var(--status-height));
   /* Row gap is set inline — `measureRows` has to know it. */
   column-gap: var(--column-gap);
   align-items: start;
+}
+
+/* ---- sides ------------------------------------------------------------
+   One band per speech, behind everything, running the whole height of the
+   sheet: the flow's own answer to "whose speech am I reading". It has to be a
+   band and not a card colour, because half of what tells you a column is a
+   column is the empty space in it — the rows a tall neighbour reserved, the
+   gaps between arguments, the run of sheet below the last card.
+
+   Painted by an element rather than by the grid's background so it tracks the
+   column tracks exactly, focus mode included: when a speech narrows to 24px,
+   its band narrows with it. */
+.flow-band {
+  align-self: stretch; /* the grid sets `align-items: start` for the cells */
+  pointer-events: none;
+}
+
+/* Both sides are named, though one of them is the sheet's own colour: the
+   asymmetry is a choice about how loud the sheet should be, not a fact about
+   the aff, and giving it a shade of its own should mean changing a token. */
+.flow-band.is-aff,
+.flow-header.is-aff {
+  background: var(--band-aff);
+}
+
+.flow-band.is-neg,
+.flow-header.is-neg {
+  background: var(--band-neg);
 }
 
 .flow-header {
   grid-row: 1;
   font-weight: 600;
   font-size: var(--header-font-size);
+  letter-spacing: 0.02em;
   padding: 1px 0 2px calc(var(--num-width) + 3px * var(--zoom));
   color: var(--card-fg);
   /* Stays put on a long flow; the sheet scrolls under it. */
@@ -219,7 +341,14 @@
 }
 
 .flow-cell.is-collapsed .flow-card:hover {
-  background: var(--muted);
+  background: var(--collapsed-hover);
+}
+
+/* The cursor inside a speech that's out of focus: the rectangle is all there
+   is to colour, so it takes the accent whole. Cheap, and it is the only way to
+   see where you are while the cursor is somewhere you aren't reading. */
+.flow-cell.is-collapsed .flow-card.is-cursor {
+  background: var(--cursor);
 }
 
 /* No room for the number beside a 24px column, and nothing to number against. */
@@ -266,7 +395,11 @@
   font-family: inherit;
   font-size: var(--card-font-size);
   line-height: var(--card-line-height);
-  background: var(--card-bg);
+  /* Transparent, so the card takes the colour of the side band behind it. A
+     card that painted its own surface would have to be told which side it was
+     on, and — worse — would be a second source of truth for a colour the
+     reserved cells around it get from the band. */
+  background: none;
   color: var(--card-fg);
   cursor: pointer;
   /* Identical wrapping in display and edit so the edit box never grows
@@ -282,9 +415,15 @@
   background: var(--card-hover);
 }
 
+/* The cursor: the card's own left rule going accent-coloured, a wash across
+   the card, and a hairline around it. Three quiet signals rather than one loud
+   one — the wash is what you find from across the sheet, the rule is what tells
+   you the exact card, and neither of them changes the card's size, so moving
+   the cursor doesn't move the flow. */
 .flow-card.is-cursor {
   border-color: var(--cursor);
-  box-shadow: 0 0 0 2px var(--cursor-ring);
+  background: var(--cursor-bg);
+  box-shadow: 0 0 0 1px var(--cursor-ring);
   /* Tight gaps mean neighbours would clip the ring — lift it above them. A
      flex item takes z-index without being positioned, and it must stay
      unpositioned: the editor stacks its layers with `position: absolute`, and
@@ -308,8 +447,18 @@
   position: relative;
   flex: 1 1 auto;
   min-width: 0;
-  /* Same lift as a cursored card: this only ever renders on the cursor. */
+  /* Same lift as a cursored card: this only ever renders on the cursor. Which
+     is also why the cursor's wash and hairline are drawn here, once, instead of
+     by the layers: all three of them carry the cursor class, and each would
+     otherwise stack another copy of the wash on the last. */
   z-index: 1;
+  background: var(--cursor-bg);
+  box-shadow: 0 0 0 1px var(--cursor-ring);
+}
+
+.flow-editor > .flow-card.is-cursor {
+  background: none;
+  box-shadow: none;
 }
 
 .flow-editor__sizer {
