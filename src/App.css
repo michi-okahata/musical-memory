@@ -366,10 +366,25 @@ body {
 
 /* A visual selection: the same accent wash the cursor uses, quieter and with
    no rule or ring of its own — those two are what say "this exact argument",
-   and a multi-argument selection has no single argument to say it about.
-   Comes before `.is-cursor` in the file so the cursor's own (stronger) look
-   wins on the one cell that carries both classes, at equal specificity. */
-.flow-cell.is-selected {
+   and a selection has no single argument to say it about.
+
+   One band spanning the whole selection (see flow_view.tsx), not a wash per
+   cell: painted per cell, the row gap between two selected arguments stayed
+   the bare sheet colour, and read as a seam between two separate things
+   rather than as the inside of one selected run. A `gridRow` *range* is what
+   covers that gap — the same way a spanning argument's own box does — where
+   `span` on a single cell could not.
+
+   Behind the cells in paint order (it comes earlier in the DOM), so the
+   cursor's own, stronger background still shows through on top of it where
+   the two overlap. */
+.flow-selection {
+  /* The grid's `align-items: start` sizes every item to its own content by
+     default — empty here, so without this the band would collapse to 0
+     height instead of filling the row range it was given. Same fix
+     `.flow-band` needed, same reason. */
+  align-self: stretch;
+  pointer-events: none;
   background: var(--accent-soft);
 }
 
@@ -416,7 +431,6 @@ body {
   color: var(--muted);
   font-weight: 400;
   font-size: var(--header-collapsed-font-size);
-  padding-left: calc(var(--band-bleed) + 2px * var(--zoom));
   overflow: hidden;
 }
 

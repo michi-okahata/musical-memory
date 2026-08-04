@@ -29,24 +29,36 @@ function computeSpans(roots: Argument[]): Map<string, number> {
 }
 
 /**
- * What to write beside each of `siblings`, keyed by id: its place among the
- * same-speech neighbours marked the same way, or null when it is the only
- * argument in the column carrying that mark and a bare "1." would be noise.
+ * What to write beside each of `siblings`, keyed by id: its place in whatever
+ * sequence its mark belongs to, or null when it's the only one of its kind and
+ * a bare "1." would be noise.
  *
- * Counted per mark rather than per contiguous run, which is what makes a list
- * survive being interrupted:
+ * `num` and `alpha` are not symmetric, on purpose — they answer different
+ * questions. `num` is the outline's backbone: the sequence of responses to one
+ * line of argument, and it survives anything that interrupts it, because a
+ * digression doesn't end the argument you were making:
  *
  *     1. permutation                 num   → 1
  *     2. link turn                   num   → 2
  *     a. and it's non-unique         alpha → a
  *     b. …their own ev says so       alpha → b
- *     3. no impact                   num   → 3   ← not 1
+ *     3. no impact                   num   → 3   ← not 1, continues
  *
- * A lettered aside in the middle of a numbered list is a digression, not the
- * end of the list — the numbering picks up where it left off, the way it would
- * on paper. The two sequences advance independently, so neither can disturb
- * the other however they interleave, and an unmarked argument in the middle
- * of either passes through without consuming a place in it.
+ * `alpha` is always a *local* aside — a breakdown of whichever numbered point
+ * is current — so a fresh `num` starts a fresh alphabet, the way "1. a. b. /
+ * 2. a. b." works in any outline. Continuing a) b) c) into d) e) f) across an
+ * intervening numbered point would say the two asides were one list, which
+ * they aren't: they're about different points.
+ *
+ *     1. permutation                 num   → 1
+ *     a. non-unique                  alpha → a
+ *     b. no link                     alpha → b
+ *     2. link turn                   num   → 2   ← breaks the alphabet
+ *     a. concedes the impact         alpha → a   ← not c, starts over
+ *
+ * An unmarked argument passes through either sequence without consuming a
+ * place in it or breaking it — it isn't a digression, it's simply not part of
+ * either list.
  *
  * Grouped by speech first because siblings mix every column together in
  * document order — an argument's neighbours are its column's slice of that
@@ -62,15 +74,30 @@ function markIndices(siblings: Argument[]): Map<string, number | null> {
 
   const out = new Map<string, number | null>();
   for (const column of bySpeech.values()) {
-    const total = new Map<Mark, number>();
-    for (const c of column) total.set(c.mark, (total.get(c.mark) ?? 0) + 1);
+    const numTotal = column.filter((c) => c.mark === "num").length;
+    let numSeen = 0;
 
-    const seen = new Map<Mark, number>();
+    // The run `alpha` is currently counting — cleared every time a `num`
+    // breaks it, carried through everything else (including an unmarked
+    // argument, which never touches it at all).
+    let run: Argument[] = [];
+    const flushRun = () => {
+      run.forEach((c, i) => out.set(c.id, run.length > 1 ? i + 1 : null));
+      run = [];
+    };
+
     for (const c of column) {
-      const n = (seen.get(c.mark) ?? 0) + 1;
-      seen.set(c.mark, n);
-      out.set(c.id, total.get(c.mark)! > 1 ? n : null);
+      if (c.mark === "num") {
+        flushRun();
+        numSeen++;
+        out.set(c.id, numTotal > 1 ? numSeen : null);
+      } else if (c.mark === "alpha") {
+        run.push(c);
+      } else {
+        out.set(c.id, null); // "none" never draws a mark
+      }
     }
+    flushRun();
   }
   return out;
 }

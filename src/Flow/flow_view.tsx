@@ -81,10 +81,13 @@ export function DebateFlow({
   const placed = placedProp ?? ownPlaced;
 
   // The selected arguments, if any — everything between the anchor and the
-  // cursor. A `Set` of ids because rendering asks "is this one in it?" once
-  // per cell; `selectionRange`'s own ordering doesn't matter here.
-  const selected = useMemo(
-    () => new Set(selectionRange(placed, selectAnchor, cursorId ?? null).map((p) => p.id)),
+  // cursor, top to bottom (`selectionRange` walks the column in that order
+  // regardless of which end the anchor is on). Drawn as one band spanning the
+  // first to the last, below, rather than a wash per cell: a selection is one
+  // idea, and a gap of bare sheet between two selected cells read as "these
+  // are two separate things," not "here is what's selected."
+  const selection = useMemo(
+    () => selectionRange(placed, selectAnchor, cursorId ?? null),
     [placed, selectAnchor, cursorId],
   );
 
@@ -225,6 +228,26 @@ export function DebateFlow({
           />
         ))}
 
+      {/* The selection, one band from the first selected argument to the last
+          — a `gridRow` range rather than `span`, so it covers the row gaps
+          between them too, the same way a spanning argument's own box does.
+          Behind the cells (it comes first here), so the cursor's own,
+          stronger highlight still shows through on top of it. */}
+      {selection.length > 0 && (
+        <div
+          className="flow-selection"
+          style={{
+            gridColumn: selection[0].col + 1,
+            gridRow: `${selection[0].row + 1 + headerOffset} / ${
+              selection[selection.length - 1].row +
+              selection[selection.length - 1].span +
+              1 +
+              headerOffset
+            }`,
+          }}
+        />
+      )}
+
       {placed.map((p) => {
         const arg = byId.get(p.id)!;
         const marker = markerOf(p.index, arg.mark);
@@ -243,13 +266,12 @@ export function DebateFlow({
             // clicking a rectangle still puts the cursor there, which
             // re-focuses it.
             // The cursor is worn by the cell rather than by the argument, so
-            // that the number is inside the highlight — see the stylesheet. A
-            // selected cell that isn't the cursor gets the quieter of the two;
-            // the cursor cell carries both classes, and `.is-cursor` wins by
-            // appearing later in the stylesheet.
+            // that the number is inside the highlight — see the stylesheet.
+            // Selection itself isn't a per-cell class any more — see
+            // `.flow-selection`, above.
             className={`flow-cell${inFocus(p.col, focus) ? "" : " is-collapsed"}${
-              selected.has(p.id) ? " is-selected" : ""
-            }${p.id === cursorId ? " is-cursor" : ""}`}
+              p.id === cursorId ? " is-cursor" : ""
+            }`}
             // Placement comes from `layoutFlow` — inherently per-node, so it
             // cannot live in a stylesheet.
             style={{
