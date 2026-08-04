@@ -1,11 +1,12 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { layoutFlow, measureRows } from "./layout_engine";
+import { layoutFlow, markerOf, measureRows } from "./layout_engine";
+import { selectionRange } from "./navigate";
 import { FOCUS_REACH, type Argument, type Placed, type Speech } from "./types";
 
 /**
  * The row gap lives here rather than in the stylesheet because the row heights
  * are computed, not authored: `measureRows` has to count the gaps a spanning
- * card covers. The column gap is pure presentation and stays in CSS.
+ * argument covers. The column gap is pure presentation and stays in CSS.
  */
 const ROW_GAP = 2;
 
@@ -19,8 +20,8 @@ const ROW_GAP = 2;
 const scaled = (px: number, zoom: number) => px * zoom;
 
 /**
- * How wide a speech gets once it's out of focus: a sliver, with its cards drawn
- * as rectangles rather than text.
+ * How wide a speech gets once it's out of focus: a sliver, with its arguments
+ * drawn as rectangles rather than text.
  *
  * Fixed pixels rather than a fraction, deliberately. A share of the width would
  * grow with the window, and the whole point is to hand the sheet to the three
@@ -47,8 +48,15 @@ interface DebateFlowProps {
    * the layout (for cursor navigation, say) so it isn't computed twice.
    */
   placed?: Placed[];
-  /** The card to keep on screen. The sheet scrolls to follow it. */
+  /** The argument to keep on screen. The sheet scrolls to follow it. */
   cursorId?: string | null;
+  /**
+   * Where a visual selection began, or null/undefined when there isn't one.
+   * The selected arguments are derived from this and `cursorId` (see
+   * `selectionRange`) rather than passed as a list — same reasoning as the
+   * editor state that owns it (see `EditorState.selectAnchor`).
+   */
+  selectAnchor?: string | null;
   /**
    * How large to draw the sheet, as a multiple of its authored size. The type
    * itself is scaled in CSS; this is here for the metrics that can't be.
@@ -62,6 +70,7 @@ export function DebateFlow({
   renderArgument,
   placed: placedProp,
   cursorId,
+  selectAnchor = null,
   focus = null,
   zoom = 1,
 }: DebateFlowProps): React.ReactElement {
@@ -70,6 +79,17 @@ export function DebateFlow({
     [roots, placedProp],
   );
   const placed = placedProp ?? ownPlaced;
+
+  // The selected arguments, if any — everything between the anchor and the
+  // cursor, top to bottom (`selectionRange` walks the column in that order
+  // regardless of which end the anchor is on). Drawn as one band spanning the
+  // first to the last, below, rather than a wash per cell: a selection is one
+  // idea, and a gap of bare sheet between two selected cells read as "these
+  // are two separate things," not "here is what's selected."
+  const selection = useMemo(
+    () => selectionRange(placed, selectAnchor, cursorId ?? null),
+    [placed, selectAnchor, cursorId],
+  );
 
   const byId = useMemo(() => {
     const m = new Map<string, Argument>();
@@ -81,8 +101,8 @@ export function DebateFlow({
     return m;
   }, [roots]);
 
-  // Cells are `align-self: start`, so each cell's box is its card's natural
-  // height — measuring it can't feed back into the track sizes we set.
+  // Cells are `align-self: start`, so each cell's box is its argument's
+  // natural height — measuring it can't feed back into the track sizes we set.
   const cellRefs = useRef(new Map<string, HTMLDivElement>());
   const gridRef = useRef<HTMLDivElement | null>(null);
   const [rowHeights, setRowHeights] = useState<number[]>([]);
@@ -116,16 +136,17 @@ export function DebateFlow({
     // were given at the previous set of column widths.
     //
     // `rowGap` carries zoom, and it is a dependency for the same reason, more
-    // sharply: zooming changes every card's height but not the grid's width,
-    // and the grid's own height is whatever these row tracks say it is — so
-    // the observer would be waiting on a resize that only this effect can
+    // sharply: zooming changes every argument's height but not the grid's
+    // width, and the grid's own height is whatever these row tracks say it is
+    // — so the observer would be waiting on a resize that only this effect can
     // cause. Left out, the sheet would change type size and keep the old rows.
   }, [placed, focus, rowGap]);
 
-  // Keep the cursor on screen. `nearest` means this only scrolls when the card
-  // has actually gone off the edge — moving around inside the visible sheet
-  // doesn't drag the page around. Re-runs on `rowHeights` too, since a card
-  // that grows while being typed in can push itself out of frame.
+  // Keep the cursor on screen. `nearest` means this only scrolls when the
+  // argument has actually gone off the edge — moving around inside the
+  // visible sheet doesn't drag the page around. Re-runs on `rowHeights` too,
+  // since an argument that grows while being typed in can push itself out of
+  // frame.
   useEffect(() => {
     if (!cursorId) return;
     cellRefs.current
@@ -134,11 +155,12 @@ export function DebateFlow({
   }, [cursorId, rowHeights]);
 
   const headerOffset = 1;
-  // A `1fr` track after the last card, holding no cards and existing only to
-  // take up whatever height is left: it is what lets the side bands run to the
-  // bottom of the window on a flow that doesn't fill it. Without it the grid
-  // is exactly as tall as its cards, and the bands stop in mid-air at the last
-  // row — which reads as the sheet ending rather than the speech being empty.
+  // A `1fr` track after the last argument, holding no arguments and existing
+  // only to take up whatever height is left: it is what lets the side bands
+  // run to the bottom of the window on a flow that doesn't fill it. Without it
+  // the grid is exactly as tall as its arguments, and the bands stop in
+  // mid-air at the last row — which reads as the sheet ending rather than the
+  // speech being empty.
   const gridTemplateRows = rowHeights.length
     ? ["auto", ...rowHeights.map((h) => `${h}px`), "1fr"].join(" ")
     : undefined;
@@ -164,12 +186,13 @@ export function DebateFlow({
     >
       {/* The side bands, first so everything else paints over them. Each one
           runs the full height of its column, filler track included: the empty
-          parts of a speech are as much a part of reading it as the cards are.
+          parts of a speech are as much a part of reading it as the arguments
+          are.
 
           `1 / -1` needs an explicit grid to reach the end of, and there isn't
-          one on the first paint — before the cards are measured there are no
-          row tracks, so the band spans the header row alone until the measure
-          lands a tick later. */}
+          one on the first paint — before the arguments are measured there are
+          no row tracks, so the band spans the header row alone until the
+          measure lands a tick later. */}
       {speeches.map((speech, i) => (
         <div
           key={`b-${i}`}
@@ -205,8 +228,29 @@ export function DebateFlow({
           />
         ))}
 
+      {/* The selection, one band from the first selected argument to the last
+          — a `gridRow` range rather than `span`, so it covers the row gaps
+          between them too, the same way a spanning argument's own box does.
+          Behind the cells (it comes first here), so the cursor's own,
+          stronger highlight still shows through on top of it. */}
+      {selection.length > 0 && (
+        <div
+          className="flow-selection"
+          style={{
+            gridColumn: selection[0].col + 1,
+            gridRow: `${selection[0].row + 1 + headerOffset} / ${
+              selection[selection.length - 1].row +
+              selection[selection.length - 1].span +
+              1 +
+              headerOffset
+            }`,
+          }}
+        />
+      )}
+
       {placed.map((p) => {
         const arg = byId.get(p.id)!;
+        const marker = markerOf(p.index, arg.mark);
         return (
           <div
             key={p.id}
@@ -214,13 +258,20 @@ export function DebateFlow({
               if (el) cellRefs.current.set(p.id, el);
               else cellRefs.current.delete(p.id);
             }}
-            // A collapsed card is drawn as a fixed-height rectangle (see the
-            // stylesheet), which is also what keeps the rows honest: left to
-            // rewrap in a 24px column it would run enormously tall, and rows
-            // are shared, so it would drag the speech you're working in down
-            // the page with it. The card element itself stays — clicking a
-            // rectangle still puts the cursor there, which re-focuses it.
-            className={`flow-cell${inFocus(p.col, focus) ? "" : " is-collapsed"}`}
+            // A collapsed argument is drawn as a fixed-height rectangle (see
+            // the stylesheet), which is also what keeps the rows honest: left
+            // to rewrap in a 24px column it would run enormously tall, and
+            // rows are shared, so it would drag the speech you're working in
+            // down the page with it. The argument's own element stays —
+            // clicking a rectangle still puts the cursor there, which
+            // re-focuses it.
+            // The cursor is worn by the cell rather than by the argument, so
+            // that the number is inside the highlight — see the stylesheet.
+            // Selection itself isn't a per-cell class any more — see
+            // `.flow-selection`, above.
+            className={`flow-cell${inFocus(p.col, focus) ? "" : " is-collapsed"}${
+              p.id === cursorId ? " is-cursor" : ""
+            }`}
             // Placement comes from `layoutFlow` — inherently per-node, so it
             // cannot live in a stylesheet.
             style={{
@@ -228,11 +279,11 @@ export function DebateFlow({
               gridRow: `${p.row + 1 + headerOffset} / span ${p.span}`,
             }}
           >
-            {/* The gutter is always drawn, empty or not: a numbered card and
-                an unnumbered one in the same column must start at the same
-                left edge. */}
-            <span className="flow-num">{p.index ?? ""}</span>
-            {renderArgument ? renderArgument(arg) : <DefaultCard text={arg.text} />}
+            {/* Only when there is one to draw. The mark is text now — it takes
+                the room its characters need and no more — so an unmarked
+                argument simply starts with its first word. */}
+            {marker && <span className="flow-num">{marker}</span>}
+            {renderArgument ? renderArgument(arg) : <DefaultArgument text={arg.text} />}
           </div>
         );
       })}
@@ -240,6 +291,6 @@ export function DebateFlow({
   );
 }
 
-function DefaultCard({ text }: { text: string }): React.ReactElement {
-  return <div className="flow-card">{text}</div>;
+function DefaultArgument({ text }: { text: string }): React.ReactElement {
+  return <div className="flow-argument">{text}</div>;
 }
