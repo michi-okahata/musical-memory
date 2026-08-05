@@ -1,87 +1,23 @@
-import type { Flow } from "./flow_crdt";
-import { FOCUS_REACH, type Mark, type Placed, type Speech } from "./types";
-import { moveCursor, moveToColumn, selectionRange, type Motion } from "./navigate";
+import { type Mark, type Speech } from "../model/types";
+import { moveCursor, moveToColumn, selectionRange, type Motion } from "../layout/navigate";
+import {
+  openSheet,
+  releaseFocus,
+  releaseSelection,
+  type Command,
+  type CommandContext,
+  type EditorState,
+} from "./state";
 
 /**
  * Vim-style editing on top of a `Flow`.
  *
  * Every key is one `Command`: a function from the current editor state to the
- * next one. Commands may mutate the flow (that's the point), but the state
- * transition itself is pure, so the whole keymap is testable without a DOM —
- * build a `Flow`, lay it out, and assert on the state a command returns.
+ * next one (see state.ts for what that state is). Commands may mutate the flow
+ * (that's the point), but the state transition itself is pure, so the whole
+ * keymap is testable without a DOM — build a `Flow`, lay it out, and assert on
+ * the state a command returns.
  */
-
-export interface EditorState {
-  /** The argument the cursor sits on, or null when nothing is selected. */
-  cursorId: string | null;
-  /** The argument being text-edited, or null. Suspends the keymap while set. */
-  editingId: string | null;
-  /**
-   * Digits typed but not yet spent. They name a speech to the commands that
-   * create an argument (`4a` answers in the 4th speech, not the next one) and
-   * a repeat count to the motions (`3j`). Null when nothing is pending.
-   */
-  count: number | null;
-  /**
-   * The speech the sheet is pinned to, or null when the whole flow is shown.
-   *
-   * Pinned rather than derived from the cursor: it stays put while you work
-   * across the focused speech and its two neighbours, and drops the moment the
-   * cursor leaves them. Focus that re-aimed itself on every move made the
-   * sheet slide around underneath you.
-   */
-  focus: number | null;
-  /**
-   * The command line's contents while it's open, or null when it isn't. Empty
-   * string means open but nothing typed yet — which is why this can't just be
-   * a string.
-   */
-  command: string | null;
-  /**
-   * Where a visual selection began, or null when there isn't one. The
-   * selection itself is never stored as a list — it's derived, whenever a
-   * command needs it, from this and `cursorId` (see `selectedIds` and
-   * `selectionRange` in navigate.ts). An anchor and a moving cursor is
-   * everything a range needs, and it can't go stale the way a captured list
-   * of ids could as the flow changes underneath it.
-   */
-  selectAnchor: string | null;
-  /**
-   * How large the sheet is drawn, as a multiple of its authored size. 1 is the
-   * 10px type the flow is designed at.
-   *
-   * A scale rather than a font size because everything about an argument is
-   * bound to its type — the number gutter, the row gap, the width a collapsed
-   * speech keeps — and they all have to move together or the sheet stops
-   * lining up.
-   */
-  zoom: number;
-}
-
-export const initialEditorState: EditorState = {
-  cursorId: null,
-  editingId: null,
-  count: null,
-  focus: null,
-  command: null,
-  selectAnchor: null,
-  zoom: 1,
-};
-
-export interface CommandContext {
-  state: EditorState;
-  flow: Flow;
-  /**
-   * The current layout. Only the motions need it — where an argument *sits* is
-   * spatial. Anything that asks which speech an argument is in goes to the
-   * flow, which owns that answer.
-   */
-  placed: Placed[];
-  /** The speeches, in order. Their names are what the command line resolves. */
-  speeches: Speech[];
-}
-
-export type Command = (ctx: CommandContext) => EditorState;
 
 /**
  * The speech the pending count names, counting from 1 the way the column
@@ -107,6 +43,102 @@ const motion =
  * what it is at the cost of one extra character over a positional count.
  */
 const openCommand: Command = ({ state }) => ({ ...state, command: "" });
+
+/**
+ * What the command line can say that isn't the name of a speech: everything to
+ * do with the room, which is everything that has an effect outside the editor's
+ * own state.
+ *
+ * They are parsed here and run by the caller, rather than by a `Command` like
+ * every other key, precisely because of that. A `Command` is a pure transition
+ * from one editor state to the next — that is what makes the keymap testable
+ * without a DOM — and opening a socket is neither pure nor a transition. So the
+ * command line asks this what was typed, and App does it.
+ */
+export type SessionCommand =
+  | { kind: "share" }
+  | { kind: "host" }
+  | { kind: "join"; invitation: string }
+  | { kind: "relay"; host: string }
+  | { kind: "leave" }
+  | { kind: "name"; name: string }
+  /** A new sheet. Untitled is allowed — you can name it once you know. */
+  | { kind: "new"; title: string }
+  | { kind: "rename"; title: string }
+  | { kind: "sheet"; name: string }
+  | { kind: "delete" };
+
+/**
+ * Read a session command, or null if the line says something else (a speech
+ * name, most likely).
+ *
+ * Nothing here validates an address or a room code. What is well-formed is one
+ * question and what actually answers is another — only the relay can settle the
+ * second — so the whole of it is decided in one place, and this only has to
+ * work out which command was meant.
+ */
+export function parseSessionCommand(text: string): SessionCommand | null {
+  const [word, ...rest] = text.trim().split(/\s+/);
+  const argument = rest.join(" ").trim();
+  switch (word.toLowerCase()) {
+    // Host a relay here and open a room on it — no server anywhere else.
+    case "host":
+      return { kind: "host" };
+    // Open a room on whichever relay this app is pointed at.
+    case "share":
+      return { kind: "share" };
+    // The whole invitation, as read out: `k7fmqp` or `192.168.1.42/k7fmqp`.
+    case "join":
+      return argument ? { kind: "join", invitation: argument } : null;
+    // Point at somebody else's relay without joining a room yet. Bare `:relay`
+    // goes back to the default, which is the way out of a wrong address.
+    case "relay":
+      return { kind: "relay", host: argument };
+    case "solo":
+    case "leave":
+      return { kind: "leave" };
+    case "name":
+      return argument ? { kind: "name", name: argument } : null;
+
+    // ---- sheets. `:new politics` is how a position gets started mid-speech,
+    // which is the moment it has to be one line and no dialog.
+    case "new":
+      return { kind: "new", title: argument };
+    case "rename":
+      return argument ? { kind: "rename", title: argument } : null;
+    // By name, the same way `:2ac` names a speech — a round has few enough
+    // sheets that a prefix is unambiguous, and it saves counting brackets.
+    case "sheet":
+      return argument ? { kind: "sheet", name: argument } : null;
+    case "delete":
+      return { kind: "delete" };
+
+    default:
+      return null;
+  }
+}
+
+/**
+ * Which sheet `text` names. Case-insensitive, and a prefix is enough — `:sheet
+ * pol` finds the politics DA — on the same terms as `resolveSpeech` below,
+ * because they are the same gesture applied to the other axis of the round.
+ */
+export function resolveSheet(
+  text: string,
+  sheets: { id: string; title: string }[],
+): string | null {
+  const want = text.trim().toLowerCase();
+  if (!want) return null;
+  const titles = sheets.map((sheet) => sheet.title.toLowerCase());
+  const exact = titles.indexOf(want);
+  if (exact >= 0) return sheets[exact].id;
+  const prefix = titles.findIndex((title) => title.startsWith(want));
+  if (prefix >= 0) return sheets[prefix].id;
+  // Failing both, anything that contains it — a sheet called "Politics DA —
+  // Midterms" should answer to "midterms".
+  const anywhere = titles.findIndex((title) => title.includes(want));
+  return anywhere >= 0 ? sheets[anywhere].id : null;
+}
 
 /**
  * Which speech `text` names. Case-insensitive, and a prefix is enough — `:blo`
@@ -220,7 +252,7 @@ const newRoot =
  * in a column. `#` was originally "re-mark the whole group *for* you", back
  * when a column numbered as a single block; now that a mark is a per-argument
  * fact and a column can hold several independent runs (an implicit forest —
- * see `markIndices` in layout_engine.ts), there is no group to imply, so it
+ * see `markIndices` in grid.ts), there is no group to imply, so it
  * re-marks whatever is selected instead.
  */
 const MARKS: Mark[] = ["num", "alpha", "none"];
@@ -357,12 +389,23 @@ const moveSelection =
  */
 const history =
   (direction: "undo" | "redo"): Command =>
-  ({ state, flow }) => {
-    const at = direction === "undo" ? flow.undo() : flow.redo();
+  ({ state, round, sheets }) => {
+    const at = direction === "undo" ? round.undo() : round.redo();
     if (at === undefined) return state; // nothing on that stack
+    if (!at) return { ...state, editingId: null, count: null };
+
+    // The change may have been made on a sheet you have since left — `u` means
+    // "take back the last thing I did", and the last thing you did is not
+    // always on the position you happen to be reading now. So undo carries you
+    // to it, which is also the only way to see what it undid.
+    let next = state;
+    if (at.sheet !== sheets.active) {
+      sheets.open(at.sheet);
+      next = openSheet(next, sheets.active, at.sheet);
+    }
     return {
-      ...state,
-      cursorId: at && flow.has(at) ? at : state.cursorId,
+      ...next,
+      cursorId: at.id ?? next.cursorId,
       editingId: null,
       count: null,
     };
@@ -391,11 +434,8 @@ export const ZOOM_MAX = 2.5;
 /** One press of `+` or `-`. Geometric, so a step means the same at either end. */
 const ZOOM_STEP = 1.15;
 
-/**
- * Scale the sheet by `factor`, clamped. Exported because zoom has a second way
- * in — a trackpad pinch — and both must land on the same state.
- */
-export function scaleZoom(state: EditorState, factor: number): EditorState {
+/** Scale the sheet by `factor`, clamped. */
+function scaleZoom(state: EditorState, factor: number): EditorState {
   const zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, state.zoom * factor));
   return { ...state, zoom };
 }
@@ -407,6 +447,39 @@ const zoomBy =
 
 /** Back to the authored size — the one place the clamped scale is exact. */
 const resetZoom: Command = ({ state }) => ({ ...state, zoom: 1 });
+
+/**
+ * Move to the sheet `delta` along — the next position, or the previous one.
+ *
+ * Clamps rather than wraps, the same way `j` stops at the bottom of a column:
+ * the sheets are an ordered stack, and running off the end of it to arrive back
+ * at the case is disorienting in exactly the moment you can least afford it.
+ */
+const goToSheet =
+  (delta: number): Command =>
+  ({ state, sheets }) => {
+    const at = sheets.list.findIndex((sheet) => sheet.id === sheets.active);
+    if (at < 0) return state;
+    const next = sheets.list[at + delta];
+    if (!next) return state;
+    sheets.open(next.id);
+    return openSheet(state, sheets.active, next.id);
+  };
+
+/** Shift the open sheet up or down the list. */
+const shiftSheet =
+  (delta: number): Command =>
+  ({ state, sheets }) => {
+    if (sheets.active) sheets.move(sheets.active, delta);
+    return state;
+  };
+
+/**
+ * Show or hide the list of sheets. On its own key because a one-sheet round —
+ * a practice speech, a rebuttal drill — has nothing to list, and the width is
+ * better spent on the flow.
+ */
+const toggleSidebar: Command = ({ state }) => ({ ...state, sidebar: !state.sidebar });
 
 /**
  * Build up the pending count. A leading `0` is ignored rather than starting
@@ -458,6 +531,15 @@ export const commands: Record<string, Command> = {
   N: newRoot("before"), // …above it: the overview case
   f: toggleFocus, // narrow the speeches you aren't in
   v: toggleSelect, // select a run in this column — # / x / J / K act on it
+  // The round's other sheets. Brackets because they are the pair vim already
+  // uses for "the next one of these, the previous one", and because the keys
+  // that make arguments are all letters — reaching for a bracket is never half
+  // of writing something down.
+  "]": goToSheet(1),
+  "[": goToSheet(-1),
+  "}": shiftSheet(1), // and shifted, the sheet itself moves
+  "{": shiftSheet(-1),
+  b: toggleSidebar, // the list of sheets
   "#": cycleMark, // how the selection is marked off: 1. / a. / nothing
   J: moveSelection("down"), // shift the selection past its next sibling…
   K: moveSelection("up"), // …or its previous one
@@ -495,49 +577,6 @@ const isDigit = (key: string) => key.length === 1 && key >= "0" && key <= "9";
  * mid-selection movement has to be allowed to run at all.
  */
 const SELECTION_KEYS = new Set(["h", "j", "k", "l", "v", "#", "x", "J", "K"]);
-
-/**
- * Focus covers the pinned speech and the one either side. Take the cursor past
- * them and the sheet opens back up completely, rather than re-aiming at
- * wherever the cursor landed.
- *
- * Applied to whole states rather than inside the motions so that *every* way
- * of moving the cursor obeys it — a keystroke, a jump to a far speech, an
- * argument created two speeches over, a click on a collapsed rectangle.
- */
-export function releaseFocus(state: EditorState, flow: Flow): EditorState {
-  if (state.focus === null) return state;
-  // No cursor to judge by (it was just deleted, say): leave the pin alone.
-  if (!state.cursorId || !flow.has(state.cursorId)) return state;
-  const col = flow.speechOf(state.cursorId);
-  return Math.abs(col - state.focus) <= FOCUS_REACH
-    ? state
-    : { ...state, focus: null };
-}
-
-/**
- * Whether `state`'s selection still makes sense, and drop it if not — the
- * same shape as `releaseFocus`, and for the same reason: a click, a jump to a
- * named speech, or `h`/`l` leaving the column can each strand an anchor
- * somewhere the cursor no longer ranges over. `selectionRange` already treats
- * "no shared column" and "the anchor's argument is gone" as the same
- * not-a-range case, so emptiness is the one check this needs.
- */
-export function releaseSelection(state: EditorState, placed: Placed[]): EditorState {
-  if (state.selectAnchor === null) return state;
-  const stillRanges = selectionRange(placed, state.selectAnchor, state.cursorId).length > 0;
-  return stillRanges ? state : { ...state, selectAnchor: null };
-}
-
-/** Put the cursor on an argument from outside the keymap — a click — same rules. */
-export function moveCursorTo(
-  state: EditorState,
-  flow: Flow,
-  id: string,
-  placed: Placed[],
-): EditorState {
-  return releaseSelection(releaseFocus({ ...state, cursorId: id }, flow), placed);
-}
 
 /**
  * Run whatever `key` is bound to. Returns null when nothing is — the caller

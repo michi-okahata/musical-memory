@@ -6,92 +6,65 @@ import {
   useState,
   type CSSProperties,
 } from "react";
-import { DebateFlow } from "./flow/flow_view";
-import { layoutFlow } from "./flow/layout_engine";
-import { selectionRange } from "./flow/navigate";
-import type { Argument, Speech } from "./flow/types";
-import { Flow } from "./flow/flow_crdt";
-import { useFlow } from "./flow/flow_user";
+import { POLICY_SPEECHES } from "./model/format";
+import { seedSample } from "./model/sample";
+import { layoutFlow } from "./layout/grid";
+import { selectionRange } from "./layout/navigate";
+import { buildDictionary, textsOf } from "./editor/completion";
 import {
   cancelCommand,
-  initialEditorState,
-  keyOf,
-  moveCursorTo,
-  run,
-  scaleZoom,
+  parseSessionCommand,
+  resolveSheet,
   submitCommand,
   typeCommand,
-} from "./flow/commands";
-import { ArgumentEditor } from "./flow/argument_editor";
-import { buildDictionary, textsOf } from "./flow/complete";
-import "./App.css";
+} from "./editor/commands";
+import {
+  initialEditorState,
+  moveCursorTo,
+  openSheet,
+  type SheetControls,
+} from "./editor/state";
+import { ArgumentView } from "./ui/ArgumentView";
+import { FlowSheet } from "./ui/FlowSheet";
+import { Sidebar } from "./ui/Sidebar";
+import { StatusLine } from "./ui/StatusLine";
+import { useSession } from "./ui/useSession";
+import { useKeymap } from "./ui/useKeymap";
+import { useTextBuffer } from "./ui/useTextBuffer";
+import type { Argument } from "./model/types";
 
-// Policy debate speech order, 1AC … 2AR. The 2NC and 1NR are the consecutive
-// negative speeches, flowed together as one column: the negative "block".
-//
-// `weight` is each speech's share of the sheet, and they are deliberately all
-// the same. Giving the 1AC and 1NC less — they're read off prepared documents,
-// so they get flowed in fewer words — reads as cramped rather than efficient:
-// the two columns you refer back to most end up the hardest to read. Focus
-// mode is the answer to a crowded sheet instead. The knob stays because a
-// column's width is a real thing to want to tune.
-//
-// `side` is what the sheet shades by. The speeches alternate, so a sheet you
-// aren't reading closely still reads as a conversation rather than as seven
-// columns of text — and the answer to "where did the 2AC go" is a glance.
-const SPEECHES: Speech[] = [
-  { label: "1AC", weight: 1, side: "aff" },
-  { label: "1NC", weight: 1, side: "neg" },
-  { label: "2AC", weight: 1, side: "aff" },
-  { label: "Block", weight: 1, side: "neg" },
-  { label: "1AR", weight: 1, side: "aff" },
-  { label: "2NR", weight: 1, side: "neg" },
-  { label: "2AR", weight: 1, side: "aff" },
-];
+/**
+ * The composition root: it owns the round and the editor state, derives what
+ * the sheet and the status line need from them, and wires the keyboard up.
+ *
+ * Everything it hands down is either state or a callback — no logic lives
+ * here. What a key does is in editor/, where an argument sits is in layout/,
+ * what the document is is in model/, and who else is in it is in sync/.
+ */
 
-// The keymap, as it appears on the status line: key, then what it does. A list
-// rather than prose so the line stays one shape — every key in the sheet's ink,
-// every gloss in the status line's grey, and the separators quieter than both.
-const HINTS: [key: string, does: string][] = [
-  ["hjkl", "move"],
-  [":2ac", "speech"],
-  ["a", "answer"],
-  ["o/O", "below/above"],
-  ["n/N", "new argument"],
-  ["i", "edit"],
-  ["Tab", "complete"],
-  ["f", "focus"],
-  ["v", "select"],
-  ["#", "1./a./–"],
-  ["J/K", "move sel"],
-  ["⌘+/-", "zoom"],
-  ["x", "delete"],
-  ["u", "undo"],
-];
-
-// Typing writes through to the CRDT at most this often. Each write commits,
-// which re-renders and re-measures the whole grid — too much per keystroke.
-// Edits always flush synchronously when the argument closes, so nothing is lost.
-const TEXT_WRITE_MS = 150;
-
-// Seed a small sample flow so the grid isn't empty on first load. One batch, so
-// it lands as a single change rather than six.
-function seed(flow: Flow) {
-  flow.batch(() => {
-    const econ = flow.addRoot(null, "Plan tanks the economy", 0);
-    flow.addResponse(econ, "No internal link — spending is offset");
-    const war = flow.addResponse(econ, "Econ decline → great-power war");
-    flow.addResponse(war, "Interdependence checks escalation", 2);
-
-    const warming = flow.addRoot(null, "Solves warming: -2C by 2050", 0);
-    flow.addResponse(warming, "Too slow — tipping points already passed");
-  });
-}
+const SPEECHES = POLICY_SPEECHES;
 
 function App() {
-  const { flow, roots } = useFlow(seed);
+  // The round arrives from the session rather than being made here, because it
+  // is the session that replaces it when you join somebody's room. Alone, the
+  // difference is invisible: no connection is opened until `:host` or `:join`.
+  const {
+    round,
+    flow,
+    roots,
+    sheets,
+    activeSheet,
+    room,
+    status,
+    peers,
+    invitation,
+    hosting,
+    error,
+    actions,
+  } = useSession(seedSample);
   const [editor, setEditor] = useState(initialEditorState);
-  const { cursorId, editingId, count, focus, command, selectAnchor, zoom } = editor;
+  const { cursorId, editingId, count, focus, command, selectAnchor, sidebar, zoom } =
+    editor;
 
   const placed = useMemo(() => layoutFlow(roots), [roots]);
 
@@ -108,7 +81,7 @@ function App() {
   // is written to the document, so the read is only stale until the commit that
   // changed it lands — which is the same tick that replaces `roots`.
   const mark = useMemo(
-    () => (cursorId && flow.has(cursorId) ? flow.markOf(cursorId) : "num"),
+    () => (cursorId && flow?.has(cursorId) ? flow.markOf(cursorId) : "num"),
     [roots, cursorId, flow],
   );
 
@@ -122,37 +95,46 @@ function App() {
     [placed, selectAnchor, cursorId],
   );
 
+  // Who wrote the argument the cursor is on, when it wasn't this peer. Only in
+  // a room: alone, every argument is yours and the answer is never interesting.
+  //
+  // Keyed on `roots` for the same reason `mark` is — it reads the document
+  // directly, and `roots` changing is the tick the document changed on.
+  const authorLabel = useMemo(() => {
+    if (!room || !cursorId || !flow?.has(cursorId)) return null;
+    const author = round.authorOf(cursorId);
+    if (!author || author === round.peerId) return null;
+    const record = round.peerRecord(author);
+    if (!record) return "someone else";
+    return record.role === "ai" ? `${record.name} (ai)` : record.name;
+  }, [roots, cursorId, flow, round, room]);
+
   // Undo restores the cursor to wherever the change was made, which means the
-  // flow has to be able to read the cursor as each change commits.
-  const cursorRef = useRef<string | null>(null);
-  cursorRef.current = cursorId;
-  useEffect(() => flow.trackCursor(() => cursorRef.current), [flow]);
+  // round has to be able to read the cursor as each change commits — including
+  // which sheet it was on, since a change may be undone from a different one.
+  const placeRef = useRef<{ sheet: string; id: string | null } | null>(null);
+  placeRef.current = activeSheet ? { sheet: activeSheet, id: cursorId } : null;
+  useEffect(() => round.trackCursor(() => placeRef.current), [round]);
 
-  // Buffer keystrokes and write through on a timer (see TEXT_WRITE_MS).
-  const pending = useRef<{ id: string; text: string } | null>(null);
-  const timer = useRef<number | null>(null);
+  // Tell the room where this peer is. Presence, not document — see session.ts.
+  // `roots` is a dependency because the speech an argument sits in can change
+  // under a cursor that hasn't moved.
+  useEffect(() => {
+    actions.setLocal({
+      cursorId,
+      editing: editingId !== null,
+      speech: cursorId && flow?.has(cursorId) ? flow.speechOf(cursorId) : null,
+    });
+  }, [actions, flow, roots, cursorId, editingId]);
 
-  const flushText = useCallback(() => {
-    if (timer.current !== null) {
-      clearTimeout(timer.current);
-      timer.current = null;
-    }
-    const p = pending.current;
-    pending.current = null;
-    if (p && flow.has(p.id)) flow.setText(p.id, p.text);
-  }, [flow]);
+  const { beginText, queueText, flushText } = useTextBuffer(flow);
 
-  const queueText = (id: string, text: string) => {
-    pending.current = { id, text };
-    if (timer.current !== null) return;
-    timer.current = window.setTimeout(() => {
-      timer.current = null;
-      flushText();
-    }, TEXT_WRITE_MS);
-  };
-
-  // Don't lose a buffered edit if the app unmounts mid-typing.
-  useEffect(() => flushText, [flushText]);
+  // Every way into edit mode passes through here — the keymap's creating keys,
+  // `i`, a double click — so this is the one place that can tell the buffer
+  // which text the editor was seeded with. See `beginText`.
+  useEffect(() => {
+    if (editingId) beginText(editingId);
+  }, [editingId, beginText]);
 
   // Leave edit mode, making sure the last keystrokes are in the doc first.
   const stopEditing = useCallback(() => {
@@ -167,195 +149,181 @@ function App() {
   // against it would drop the cursor undo had just legitimately restored — the
   // argument is back in the document, but not yet in the layout.
   useEffect(() => {
-    if (cursorId && !flow.has(cursorId)) {
+    if (cursorId && flow && !flow.has(cursorId)) {
       setEditor((s) => ({ ...s, cursorId: null }));
     }
   }, [roots, cursorId, flow]);
 
+  // Opening a sheet: the session decides what is on screen, the editor state
+  // remembers where you were on the one you left. Both halves in one place, so
+  // a click in the sidebar and `]` do exactly the same thing.
+  const open = useCallback(
+    (sheetId: string) => {
+      if (sheetId === activeSheet) return;
+      actions.openSheet(sheetId);
+      setEditor((s) => openSheet(s, activeSheet, sheetId));
+    },
+    [actions, activeSheet],
+  );
+
+  const sheetControls = useMemo<SheetControls>(
+    () => ({
+      list: sheets,
+      active: activeSheet,
+      open: actions.openSheet,
+      move: actions.moveSheet,
+    }),
+    [sheets, activeSheet, actions],
+  );
+
   // Vim-style keyboard control. Suspended while editing an argument.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (editingId) return; // let the textarea own the keyboard
-      const tag = (e.target as HTMLElement).tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA") return;
+  useKeymap(
+    { state: editor, flow, round, placed, speeches: SPEECHES, sheets: sheetControls },
+    setEditor,
+  );
 
-      // Run the command here, not inside the setState updater: commands mutate
-      // the flow, and StrictMode double-invokes updaters in development.
-      const next = run(keyOf(e), {
-        state: editor,
-        flow,
-        placed,
-        speeches: SPEECHES,
-      });
-      if (!next) return;
-      e.preventDefault();
-      setEditor(next);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [placed, editor, editingId, flow]);
+  // What the command line says, read at submit time rather than from this
+  // render's closure — see the note on the status line's handlers below.
+  const commandRef = useRef<string | null>(null);
+  commandRef.current = command;
 
-  // Pinch to zoom. A trackpad pinch arrives as a wheel event with ctrlKey set —
-  // the same shape as ctrl-scroll, which is the mouse gesture for this anyway,
-  // so one handler covers both. Unlike Cmd +/-, this one *is* cancellable, so
-  // taking it means the sheet zooms instead of the page.
-  //
-  // Listened for directly rather than through onWheel because React attaches
-  // wheel handlers passively, and a passive listener may not preventDefault.
-  useEffect(() => {
-    const onWheel = (e: WheelEvent) => {
-      if (!e.ctrlKey) return; // an ordinary scroll is an ordinary scroll
-      e.preventDefault();
-      // Exponential in the distance pinched, which is what makes the sheet
-      // track the fingers: the same spread scales by the same ratio wherever
-      // the zoom already is.
-      setEditor((s) => scaleZoom(s, Math.exp(-e.deltaY / 100)));
-    };
-    window.addEventListener("wheel", onWheel, { passive: false });
-    return () => window.removeEventListener("wheel", onWheel);
-  }, []);
-
-  const renderArgument = (arg: Argument) => {
-    // No cursor state on the argument: the cell wears it, so that the number
-    // is inside the highlight — see the stylesheet.
-    const argumentClass = "flow-argument";
-
-    if (arg.id === editingId) {
-      return (
-        <ArgumentEditor
-          key={`edit-${arg.id}`}
-          className={argumentClass}
-          initialText={arg.text}
-          dictionary={dictionary}
-          onChange={(text) => queueText(arg.id, text)}
-          onDone={stopEditing}
-        />
+  // Submitting the command line. The room and sheet commands are run here,
+  // outside the state updater, because they are not state transitions at all:
+  // they open connections and change the document, and StrictMode
+  // double-invokes updaters. Anything else typed is a speech to jump to, which
+  // is pure, and goes through `submitCommand` exactly as before.
+  const runCommand = useCallback(() => {
+    const session = parseSessionCommand(commandRef.current ?? "");
+    if (!session) {
+      setEditor((s) =>
+        flow ? submitCommand({ state: s, flow, round, placed, speeches: SPEECHES, sheets: sheetControls }) : cancelCommand(s),
       );
+      return;
     }
+    setEditor(cancelCommand);
+    switch (session.kind) {
+      case "host":
+        actions.host();
+        break;
+      case "share":
+        actions.share();
+        break;
+      case "join":
+        actions.join(session.invitation);
+        break;
+      case "relay":
+        actions.useRelay(session.host);
+        break;
+      case "leave":
+        actions.leave();
+        break;
+      case "name":
+        actions.rename(session.name);
+        break;
+      case "new": {
+        const id = actions.addSheet(session.title || "untitled");
+        setEditor((s) => openSheet(s, activeSheet, id));
+        break;
+      }
+      case "rename":
+        if (activeSheet) actions.renameSheet(activeSheet, session.title);
+        break;
+      case "sheet": {
+        const id = resolveSheet(session.name, sheets);
+        if (id) open(id);
+        break;
+      }
+      case "delete":
+        // Never the last one: a round with no sheets has nowhere to put the
+        // next argument, and the way to clear a sheet you don't want is to
+        // delete what's on it.
+        if (activeSheet && sheets.length > 1) actions.removeSheet(activeSheet);
+        break;
+    }
+  }, [actions, flow, placed, sheets, activeSheet, open, sheetControls]);
 
-    return (
-      <div
-        className={argumentClass}
-        // Through the same helper the keymap uses, so a click on a collapsed
-        // rectangle two speeches away drops focus (and any selection) exactly
-        // as `l l` would.
-        onClick={() => setEditor((s) => moveCursorTo(s, flow, arg.id, placed))}
-        onDoubleClick={() =>
-          setEditor((s) => ({
-            ...moveCursorTo(s, flow, arg.id, placed),
-            editingId: arg.id,
-            count: null,
-          }))
-        }
-      >
-        {arg.text || <span className="flow-argument__placeholder">empty</span>}
-      </div>
-    );
-  };
+  const renderArgument = (arg: Argument) => (
+    <ArgumentView
+      key={arg.id === editingId ? `edit-${arg.id}` : arg.id}
+      argument={arg}
+      editing={arg.id === editingId}
+      dictionary={dictionary}
+      onChange={(text) => queueText(arg.id, text)}
+      onDone={stopEditing}
+      onSelect={() => flow && setEditor((s) => moveCursorTo(s, flow, arg.id, placed))}
+      onEdit={() =>
+        flow &&
+        setEditor((s) => ({
+          ...moveCursorTo(s, flow, arg.id, placed),
+          editingId: arg.id,
+          count: null,
+        }))
+      }
+    />
+  );
 
   return (
     // The zoom multiplier is handed to the stylesheet here and read back out of
     // it by every metric the sheet is drawn at — see the `.app` block. The cast
     // is only because React's CSSProperties has no room for custom properties.
-    <main className="app" style={{ "--zoom": zoom } as CSSProperties}>
-      <DebateFlow
-        roots={roots}
-        placed={placed}
-        speeches={SPEECHES}
-        cursorId={cursorId}
-        selectAnchor={selectAnchor}
-        focus={focus}
-        zoom={zoom}
-        renderArgument={renderArgument}
+    <main
+      className={`app${sidebar ? "" : " app--no-sidebar"}`}
+      style={{ "--zoom": zoom } as CSSProperties}
+    >
+      <Sidebar
+        sheets={sheets}
+        activeSheet={activeSheet}
+        peers={peers}
+        onOpen={open}
+        onAdd={() => {
+          const id = actions.addSheet("untitled");
+          setEditor((s) => openSheet(s, activeSheet, id));
+        }}
+        onRename={actions.renameSheet}
       />
 
-      {/* A status line rather than a banner: the sheet is what the screen is
-          for, and a hint above it pushed the first speech down the page. */}
-      <footer className="app__status">
-        <span className="app__count">{count ?? ""}</span>
+      <div className="app__flow">
+        <FlowSheet
+          roots={roots}
+          placed={placed}
+          speeches={SPEECHES}
+          cursorId={cursorId}
+          selectAnchor={selectAnchor}
+          focus={focus}
+          zoom={zoom}
+          // Only the peers on this sheet: everybody else's cursor is on an
+          // argument that isn't drawn here, and the sidebar is where they show.
+          peers={peers.filter((peer) => peer.sheet === activeSheet)}
+          renderArgument={renderArgument}
+        />
+      </div>
 
-        {/* The command line takes the status line over while it's open — it is
-            the same thing vim's is: a place to say something longer than a
-            keystroke. Being a real input means the browser handles the caret
-            and editing keys, and the global keymap already stands aside for
-            anything focused in an INPUT. */}
-        {command !== null ? (
-          <span className="app__cmdline">
-            :
-            <input
-              className="app__cmd"
-              autoFocus
-              value={command}
-              // Every one of these takes the *latest* state rather than the
-              // `editor` this render closed over. Submitting unmounts the
-              // input, which fires blur — and a blur handler holding the
-              // pre-submit state would put the cursor straight back where it
-              // started. Hence also the already-closed check: once the command
-              // line is gone there is nothing left to cancel.
-              onChange={(e) => {
-                const text = e.target.value;
-                setEditor((s) => typeCommand(s, text));
-              }}
-              onBlur={() =>
-                setEditor((s) => (s.command === null ? s : cancelCommand(s)))
-              }
-              onKeyDown={(e) => {
-                e.stopPropagation();
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  // Safe inside the updater: unlike the creating commands,
-                  // this only moves the cursor — it never touches the flow.
-                  setEditor((s) =>
-                    submitCommand({ state: s, flow, placed, speeches: SPEECHES }),
-                  );
-                } else if (e.key === "Escape") {
-                  e.preventDefault();
-                  setEditor((s) => cancelCommand(s));
-                }
-              }}
-            />
-          </span>
-        ) : (
-          <span className="app__hint">
-            {HINTS.map(([key, what], i) => (
-              <span key={key}>
-                {i > 0 && <i> · </i>}
-                <kbd>{key}</kbd> {what}
-              </span>
-            ))}
-          </span>
-        )}
-        {/* Visual mode, first — it's the newest state and the one most likely
-            to be forgotten about, so it goes where the eye lands first among
-            the chips. Named "select" until there's something to count: `v`
-            alone hasn't ranged over anything yet, and "1 selected" would be
-            true of every cursor all the time. */}
-        {selectAnchor !== null && (
-          <span className="app__mode">
-            {selectionSize > 1 ? `${selectionSize} selected` : "select"}
-          </span>
-        )}
-        {/* Only when the cursor's own argument isn't marked the ordinary way,
-            on the same terms as the zoom below: the default says nothing
-            worth a chip, and the two that aren't the default are invisible on
-            a run that has only one argument so far. */}
-        {mark !== "num" && (
-          <span className="app__mode">{mark === "alpha" ? "a. b. c." : "no marks"}</span>
-        )}
-        {/* Naming the pinned speech matters now that it doesn't follow the
-            cursor — it's the difference between "focus is on" and knowing
-            which three columns you're inside. */}
-        {focus !== null && (
-          <span className="app__mode">focus {SPEECHES[focus]?.label ?? ""}</span>
-        )}
-        {/* Only once it's been touched: at 1 the sheet is at its authored size,
-            and a permanent "100%" would be one more thing on the line saying
-            nothing. Shown at all because a pinch can leave you at a scale you
-            didn't choose deliberately, and ⌘0 is the way back. */}
-        {zoom !== 1 && (
-          <span className="app__mode">{Math.round(zoom * 100)}%</span>
-        )}
-      </footer>
+      <StatusLine
+        count={count}
+        command={command}
+        editing={editingId !== null}
+        selecting={selectAnchor !== null}
+        selectionSize={selectionSize}
+        mark={mark}
+        focusLabel={focus === null ? null : (SPEECHES[focus]?.label ?? "")}
+        zoom={zoom}
+        room={room}
+        status={status}
+        peers={peers}
+        invitation={invitation}
+        hosting={hosting !== null}
+        error={error}
+        authorLabel={authorLabel}
+        // Every one of these takes the *latest* state rather than the `editor`
+        // this render closed over — see CommandLine.tsx. Hence also the
+        // already-closed check on cancel: once the command line is gone there
+        // is nothing left to cancel.
+        onCommandChange={(text) => setEditor((s) => typeCommand(s, text))}
+        onCommandSubmit={runCommand}
+        onCommandCancel={() =>
+          setEditor((s) => (s.command === null ? s : cancelCommand(s)))
+        }
+      />
     </main>
   );
 }

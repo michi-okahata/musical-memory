@@ -1,0 +1,72 @@
+/* ---- other people -----------------------------------------------------
+   A partner's cursor, drawn on the sheet where it is rather than as a marker
+   beside it: the same rule, wash and hairline your own cursor wears (see
+   `.flow-cell.is-cursor` in argument.css), in their colour instead of the
+   accent. Nothing is added to the sheet — the one shape you already read your
+   position from now answers "and where is everybody else" as well.
+
+   `--peer` is set on the cell by the component, since a colour per peer can't
+   be authored here. It is a hue at fixed saturation and lightness (see
+   `peerColor`), which is what lets one set of mixes below read correctly for
+   anybody's colour on either theme.
+
+   Who they are is not on the sheet at all. Names are on the status line, where
+   there is room to spell one; a tag out here would have to sit over the text
+   of the argument it is pointing at, and a flow is dense enough already. */
+
+.flow-cell.is-peer {
+  border-color: var(--peer);
+  background: color-mix(in srgb, var(--peer) 10%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--peer) 32%, transparent);
+  /* Tight gaps mean a neighbour would clip the hairline — same lift the
+     cursor takes, and below it, so your own position always wins. */
+  z-index: 1;
+}
+
+/* Somebody typing into an argument, rather than merely sitting on it. The
+   difference is carried by weight, not by motion: the wash comes up and the
+   hairline firms, so a partner working reads as louder than a partner
+   reading. Animation was the other option and it is the wrong one — a pulse
+   in the corner of your eye for the length of a 2NC is a thing you end up
+   working around. */
+.flow-cell.is-peer-editing {
+  background: color-mix(in srgb, var(--peer) 18%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--peer) 60%, transparent);
+}
+
+/* Both of you on the same argument. Yours takes the wash and the outer
+   hairline — it is where *you* are, and that has to stay findable — and
+   theirs is stated as a second hairline just inside it. The left rule goes to
+   them: it is the edge nearest their name on the status line, and your own
+   position is already saying three other things. */
+.flow-cell.is-cursor.is-peer {
+  background: var(--cursor-bg);
+  border-color: var(--peer);
+  box-shadow:
+    0 0 0 1px var(--cursor-ring),
+    inset 0 0 0 1px color-mix(in srgb, var(--peer) 55%, transparent);
+  z-index: 2;
+}
+
+/* In a speech that's out of focus there is no rule and no text — the argument
+   is a rectangle, so the rectangle is what carries the colour, exactly as it
+   does for your own cursor. */
+.flow-cell.is-collapsed.is-peer {
+  background: none;
+  box-shadow: none;
+}
+
+.flow-cell.is-collapsed.is-peer .flow-argument {
+  background: color-mix(in srgb, var(--peer) 60%, var(--collapsed-fill));
+}
+
+.flow-cell.is-collapsed.is-peer-editing .flow-argument {
+  background: var(--peer);
+}
+
+/* Your own cursor still wins in a collapsed speech: you can be looking at a
+   sliver of a column and you still have to be able to find yourself in it. */
+.flow-cell.is-collapsed.is-cursor.is-peer .flow-argument {
+  background: var(--cursor);
+  box-shadow: inset 0 0 0 1px var(--peer);
+}

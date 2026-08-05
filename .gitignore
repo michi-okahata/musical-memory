@@ -25,3 +25,6 @@ dist-ssr
 
 # notes
 notes.md
+
+# rooms the relay is keeping (see server/relay.mjs)
+.flow-rooms

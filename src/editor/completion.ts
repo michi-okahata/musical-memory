@@ -1,4 +1,4 @@
-import type { Argument } from "./types";
+import type { Argument } from "../model/types";
 
 /**
  * Word completion for flowing.

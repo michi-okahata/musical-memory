@@ -1,26 +1,39 @@
-import { LoroDoc, UndoManager } from "loro-crdt";
-import type { LoroTree, LoroTreeNode, TreeID, Subscription } from "loro-crdt";
+import { LoroDoc, LoroText } from "loro-crdt";
+import type { LoroTree, LoroTreeNode, TreeID } from "loro-crdt";
 import { DEFAULT_MARK, type Argument, type Mark } from "./types";
 
 /**
- * A debate "flow": the tree of arguments and the responses made to them across
- * speeches. Structure lives in a Loro `LoroTree` (a movable-tree CRDT), so
- * concurrent add / move / delete from multiple peers merge without cycles,
- * orphans, or lost children. Each node carries its own `LoroMap` of metadata.
+ * One sheet of a flow: the tree of arguments on a single position, and the
+ * responses made to them across speeches. Structure lives in a Loro `LoroTree`
+ * (a movable-tree CRDT), so concurrent add / move / delete from multiple peers
+ * merge without cycles, orphans, or lost children. Each node carries its own
+ * `LoroMap` of metadata.
  *
  * `speech` is the column an argument sits in (0 = first speech, 1 = next, ...);
  * the tree edges are the "who responded to what" relationships.
+ *
+ * A round is several of these — the case, topicality, each disadvantage — and
+ * the set of them is `Round` (see round.ts), which owns the document all these
+ * trees live in. This class knows about one sheet and nothing else: it does not
+ * export, import, or undo, because those are things you do to a round.
+ *
+ * Everything here is deliberately free of the DOM and of React: the same class
+ * is what a headless peer runs — a relay keeping a room's document, or an
+ * assistant transcribing a speech into it — so a flow can be joined by
+ * something that has no sheet to draw.
  */
 
-const TREE_KEY = "flow";
+/** The tree a document written before sheets existed keeps its arguments in. */
+export const LEGACY_SHEET_ID = "flow";
 
-/**
- * Commits closer together than this collapse into one undo step. Text writes
- * are already throttled (see the editor), so continuous typing arrives as a
- * commit every ~150ms; this merges a burst of typing — and the keystroke that
- * created the argument it went into — into a single undo.
- */
-const UNDO_MERGE_MS = 500;
+export interface FlowHooks {
+  /**
+   * Called on the way into every mutation, while the tree still holds what is
+   * about to change. It is how the round notes where the cursor was before a
+   * deletion takes the argument it was on — see `Round.markCursor`.
+   */
+  beforeChange?: () => void;
+}
 
 /**
  * Where a new argument goes, as a *value* rather than a method name — so a
@@ -66,58 +79,30 @@ interface Placement {
 
 export class Flow {
   readonly doc: LoroDoc;
+  /** Which sheet this is, in the round that owns it. Also its tree's key. */
+  readonly id: string;
   private readonly tree: LoroTree;
-  private readonly history: UndoManager;
+  private readonly hooks: FlowHooks;
   private txDepth = 0;
-  /** Reads the editor's cursor, once `trackCursor` has been called. */
-  private readCursor: (() => string | null) | null = null;
-  /** The cursor's whereabouts as of the mutation being committed. Nothing to
-      do with an argument's `Mark`, which is how its group is numbered. */
-  private undoMark = "";
-  /** The mark carried by the step just popped off the undo/redo stack. */
-  private popped = "";
 
-  constructor(doc: LoroDoc = new LoroDoc()) {
+  constructor(doc: LoroDoc = new LoroDoc(), id: string = LEGACY_SHEET_ID, hooks: FlowHooks = {}) {
     this.doc = doc;
-    this.tree = doc.getTree(TREE_KEY);
+    this.id = id;
+    // The sheet's id names its tree. One container per sheet rather than one
+    // tree with the sheets as its roots: a sheet is a whole flow — the layout,
+    // the keymap and the cursor all speak in terms of *its* roots — and making
+    // them all say "the children of the sheet I'm on" instead would put the
+    // same fact in thirty places.
+    this.tree = doc.getTree(id);
     // Keep siblings in a deterministic, stable order and allow positional
     // moves (moveTo / createAt with an index).
     this.tree.enableFractionalIndex(0);
-    this.history = new UndoManager(doc, { mergeInterval: UNDO_MERGE_MS });
+    this.hooks = hooks;
   }
 
-  /**
-   * Remember where the cursor is with every change, so undo can put it back.
-   * `read` is the editor's answer to "which argument is the cursor on?".
-   *
-   * Returns a function that stops the tracking.
-   */
-  trackCursor(read: () => string | null): () => void {
-    this.readCursor = read;
-    // Loro's step metadata is a plain `Value`; a string keeps it simple, and
-    // "" stands in for "we don't know where the cursor was".
-    this.history.setOnPush(() => ({ value: this.undoMark, cursors: [] }));
-    this.history.setOnPop((_isUndo, meta) => {
-      this.popped = typeof meta.value === "string" ? meta.value : "";
-    });
-    return () => {
-      this.readCursor = null;
-      this.history.setOnPush(undefined);
-      this.history.setOnPop(undefined);
-    };
-  }
-
-  /**
-   * Note where the cursor is *before* a mutation touches the tree.
-   *
-   * The timing is the whole point. Loro pushes its undo step when the change
-   * commits, by which time a deletion has already taken the cursor's argument
-   * with it — there'd be nothing left to describe. Every mutator calls this on
-   * the way in instead, while the tree still holds the answer.
-   */
+  /** Note where the cursor is before this sheet changes — see `FlowHooks`. */
   private markCursor(): void {
-    const id = this.readCursor?.() ?? null;
-    this.undoMark = id && this.has(id) ? `${id}#${this.pathOf(id).join(",")}` : "";
+    this.hooks.beforeChange?.();
   }
 
   /**
@@ -130,7 +115,7 @@ export class Flow {
    * has a different name than the one that went away. Its place in the flow,
    * on the other hand, is exactly the one it left.
    */
-  private pathOf(id: string): number[] {
+  pathOf(id: string): number[] {
     const path: number[] = [];
     let node: LoroTreeNode | undefined = this.tree.getNodeByID(id as TreeID);
     while (node) {
@@ -141,7 +126,7 @@ export class Flow {
   }
 
   /** The argument now sitting at `path`, if anything does. */
-  private atPath(path: number[]): string | null {
+  atPath(path: number[]): string | null {
     let siblings = this.tree.roots();
     let node: LoroTreeNode | undefined;
     for (const i of path) {
@@ -150,59 +135,6 @@ export class Flow {
       siblings = node.children() ?? [];
     }
     return node?.id ?? null;
-  }
-
-  /** Turn a mark back into an argument: by id if it still names one, else by place. */
-  private locate(mark: string): string | null {
-    const [id, path] = mark.split("#");
-    if (id && this.has(id)) return id;
-    if (!path) return null;
-    return this.atPath(path.split(",").filter(Boolean).map(Number));
-  }
-
-  /**
-   * Undo the last local change.
-   *
-   * Returns the argument the cursor should go to — where the undone change
-   * was made — or null if that isn't known, or `undefined` when there was
-   * nothing to undo at all. The caller has to tell those last two apart.
-   *
-   * Only *your* edits are undone — a peer's concurrent changes are left in
-   * place, which is what you want when two people flow the same round.
-   */
-  undo(): string | null | undefined {
-    return this.step("undo");
-  }
-
-  redo(): string | null | undefined {
-    return this.step("redo");
-  }
-
-  private step(direction: "undo" | "redo"): string | null | undefined {
-    // The opposite stack gets a step pushed during this call; mark first so it
-    // carries the cursor as it is now, not as it was two changes ago.
-    this.markCursor();
-    this.popped = "";
-    const moved = direction === "undo" ? this.history.undo() : this.history.redo();
-    if (!moved) return undefined;
-    // Resolved only now: `locate` has to read the tree as the undo left it.
-    return this.locate(this.popped);
-  }
-
-  canUndo(): boolean {
-    return this.history.canUndo();
-  }
-
-  canRedo(): boolean {
-    return this.history.canRedo();
-  }
-
-  /**
-   * Drop the undo history, making the current state the floor. Call after
-   * seeding or loading a snapshot so undo can't rewind into an empty flow.
-   */
-  clearHistory(): void {
-    this.history.clear();
   }
 
   /**
@@ -237,7 +169,9 @@ export class Flow {
     const node = at.parent
       ? at.parent.createNode(at.index)
       : this.tree.createNode(undefined, at.index);
-    node.data.set("text", init.text ?? "");
+    // Text is its own container, not a string in the map — see `setText`.
+    const text = node.data.setContainer("text", new LoroText());
+    if (init.text) text.insert(0, init.text);
     node.data.set("speech", speech);
     node.data.set("mark", mark);
     this.commit();
@@ -373,10 +307,71 @@ export class Flow {
     return { parent: node.parent(), index, speech: this.readSpeech(node) };
   }
 
+  /**
+   * Rewrite an argument's text.
+   *
+   * The text is a `LoroText`, not a string on the node's map, and the whole
+   * reason is other people: a map entry merges last-writer-wins, so two peers
+   * typing into one argument would end with one of them silently losing
+   * everything they wrote. A text CRDT merges by character instead, which is
+   * what makes an argument something two people — or a person and an assistant
+   * transcribing the speech into it — can be inside at the same time.
+   *
+   * The editor hands over the whole string rather than keystrokes, so `update`
+   * diffs it against what's there and writes only the difference. That keeps
+   * the merge honest: retyping a word touches that word, not the paragraph.
+   */
   setText(id: string, text: string): void {
     this.markCursor();
-    this.requireNode(id).data.set("text", text);
+    this.textContainer(this.requireNode(id)).update(text);
     this.commit();
+  }
+
+  /** An argument's text as it stands in the document. */
+  textOf(id: string): string {
+    return this.textContainer(this.requireNode(id)).toString();
+  }
+
+  /**
+   * Replace `remove` characters at `at` with `insert` — the one edit the user
+   * actually made, rather than the whole argument they made it in.
+   *
+   * This is what `setText` cannot do while somebody else is in the same
+   * argument. `update` diffs the new text against what the *document* holds,
+   * so a sentence your partner added while you had the argument open reads as
+   * something you deleted, and writing your version deletes it. Handing over
+   * the span that changed instead touches only what you touched, and their
+   * sentence is still there when you both stop typing.
+   *
+   * Offsets are UTF-16, which is what Loro's text API and JavaScript's own
+   * strings both count in, so the editor's positions need no translation.
+   */
+  spliceText(id: string, at: number, remove: number, insert: string): void {
+    this.markCursor();
+    const text = this.textContainer(this.requireNode(id));
+    // A concurrent edit can leave the span short of where it was; clamping is
+    // the difference between an edit landing slightly early and one throwing.
+    const start = Math.min(at, text.length);
+    const count = Math.min(remove, text.length - start);
+    if (count > 0 || insert) text.splice(start, count, insert);
+    this.commit();
+  }
+
+  /**
+   * The text container of a node, creating it if this is a document written
+   * before text had one. `getOrCreateContainer` rather than `setContainer` so
+   * that two peers reaching this line concurrently converge on one container
+   * instead of each installing their own and losing a writer.
+   */
+  private textContainer(node: LoroTreeNode): LoroText {
+    const existing = node.data.get("text");
+    if (existing instanceof LoroText) return existing;
+    // A legacy plain-string value: carry it across, then let the container own
+    // it from here.
+    const was = typeof existing === "string" ? existing : "";
+    const text = node.data.getOrCreateContainer("text", new LoroText());
+    if (was && text.length === 0) text.insert(0, was);
+    return text;
   }
 
   setSpeech(id: string, speech: number): void {
@@ -441,35 +436,6 @@ export class Flow {
     return this.tree.roots().map((n) => toArgument(n));
   }
 
-  /**
-   * Subscribe to any change (local or remote). Returns an unsubscribe fn.
-   * Typical use: re-read `roots()` and re-render.
-   */
-  subscribe(listener: () => void): Subscription {
-    return this.doc.subscribe(() => listener());
-  }
-
-  /** Snapshot for persistence / initial sync. */
-  export(): Uint8Array {
-    return this.doc.export({ mode: "snapshot" });
-  }
-
-  /** Incremental update since the peer's known version, for live sync. */
-  exportUpdates(): Uint8Array {
-    return this.doc.export({ mode: "update" });
-  }
-
-  /** Merge a snapshot or update from another peer / disk. */
-  import(bytes: Uint8Array): void {
-    this.doc.import(bytes);
-  }
-
-  static fromSnapshot(bytes: Uint8Array): Flow {
-    const flow = new Flow();
-    flow.import(bytes);
-    return flow;
-  }
-
   private requireNode(id: string): LoroTreeNode {
     const node = this.tree.getNodeByID(id as TreeID);
     if (!node || node.isDeleted()) {
@@ -493,9 +459,20 @@ function readMark(node: LoroTreeNode): Mark {
 function toArgument(node: LoroTreeNode): Argument {
   return {
     id: node.id,
-    text: (node.data.get("text") as string) ?? "",
+    text: readText(node),
     speech: (node.data.get("speech") as number) ?? 0,
     mark: readMark(node),
     children: (node.children() ?? []).map(toArgument),
   };
+}
+
+/**
+ * An argument's text. A container since text became something two peers can be
+ * inside at once (see `setText`); the string branch is for documents written
+ * before that, which still have to render.
+ */
+function readText(node: LoroTreeNode): string {
+  const text = node.data.get("text");
+  if (text instanceof LoroText) return text.toString();
+  return typeof text === "string" ? text : "";
 }

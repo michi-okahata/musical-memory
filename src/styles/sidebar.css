@@ -1,0 +1,148 @@
+/* ---- the sheets -------------------------------------------------------
+   A round is a stack of positions, and this is the stack. It sits down the
+   left because that is where a list of things you switch between goes, and
+   because the sheet's own left edge — the number gutter — is the one part of
+   it that can afford a neighbour.
+
+   Sized in the sheet's own units, so it zooms with everything else: a sidebar
+   that stayed 160px while the flow doubled would be half a sheet wide. */
+
+.app__sidebar {
+  flex: none;
+  width: calc(112px * var(--zoom));
+  /* Stays put while the flow scrolls under it — a round can be a very long
+     page, and the list of positions is the thing you never want to scroll
+     back up to find. */
+  position: sticky;
+  top: 0;
+  align-self: start;
+  height: calc(100vh - var(--status-height));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-right: 1px solid var(--rule);
+  /* Clears the sheet's own top padding so the first sheet name lines up with
+     the speech headers. */
+  padding-right: calc(6px * var(--zoom));
+  margin-right: calc(4px * var(--zoom));
+}
+
+.app__sidebar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  /* The same line the speech headers sit on, and the same rule under it, so
+     the sidebar reads as part of the sheet rather than a panel stuck to it. */
+  font-family: var(--font-mono);
+  font-size: calc(9px * var(--zoom));
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  padding: 1px 0 2px;
+  border-bottom: 1px solid var(--rule);
+  position: sticky;
+  top: 0;
+  background: var(--sheet);
+  z-index: 2;
+}
+
+.app__sidebar-add {
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: calc(12px * var(--zoom));
+  line-height: 1;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 0 calc(2px * var(--zoom));
+}
+
+.app__sidebar-add:hover {
+  color: var(--accent);
+}
+
+.app__sheets {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* One sheet. Deliberately the same three signals the cursor uses on an
+   argument — a left rule, a wash, and nothing else — because it is the same
+   idea at the level above: this is the one you are on. */
+.app__sheet {
+  display: flex;
+  align-items: center;
+  gap: calc(4px * var(--zoom));
+  font-size: var(--argument-font-size);
+  line-height: var(--argument-line-height);
+  padding: calc(2px * var(--zoom)) calc(4px * var(--zoom));
+  border-left: 1px solid transparent;
+  cursor: pointer;
+  user-select: none;
+}
+
+.app__sheet:hover {
+  background: var(--argument-hover);
+}
+
+.app__sheet.is-active {
+  border-left-color: var(--cursor);
+  background: var(--cursor-bg);
+  color: var(--argument-fg);
+}
+
+/* Long position names are the norm — "Politics DA — Midterms" — and the list
+   is one column of a sheet wide. Clipped rather than wrapped: a wrapping name
+   makes the rows different heights, and the point of the list is that it can
+   be scanned. The full name is on the row's title. */
+.app__sheet-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.app__sheet-rename {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  padding: 0;
+  font: inherit;
+  color: var(--argument-fg);
+  background: transparent;
+}
+
+/* Who is on this sheet. The same colours their cursors wear out on the flow,
+   so a dot here and a cursor there read as one person. */
+.app__sheet-peers {
+  flex: none;
+  display: flex;
+  gap: calc(2px * var(--zoom));
+}
+
+.app__sheet-peer {
+  width: calc(4px * var(--zoom));
+  height: calc(4px * var(--zoom));
+  border-radius: 50%;
+}
+
+.app__sheets-empty {
+  margin: calc(6px * var(--zoom)) calc(4px * var(--zoom));
+  font-size: calc(9px * var(--zoom));
+  color: var(--placeholder);
+}
+
+.app__sheets-empty kbd {
+  font-family: var(--font-mono);
+  color: var(--muted);
+}
+
+/* Hidden, but still laid out as a column that isn't there: the sheet takes
+   the whole width back rather than leaving a gap where the list was. */
+.app--no-sidebar .app__sidebar {
+  display: none;
+}

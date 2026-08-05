@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { completionAt, type Dictionary } from "./complete";
+import { completionAt, type Dictionary } from "../editor/completion";
 
 /**
  * The text editor for one argument, with the suggested rest of the current

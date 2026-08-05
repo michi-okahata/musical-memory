@@ -60,6 +60,25 @@ export interface Placed {
  */
 export const FOCUS_REACH = 1;
 
+/**
+ * Who is holding a pen. A flow is written by people in the room, and — the
+ * direction this is built for — by an assistant transcribing the speech as it
+ * happens. Both are peers on the same document; the role is what lets the sheet
+ * say which is which, so an argument that appeared without anyone typing it can
+ * be read as what it is.
+ */
+export type Role = "human" | "ai";
+
+/**
+ * A peer as the document remembers it, rather than as the network sees it.
+ * Written once per peer (see `Flow.identify`) so that an argument flowed by
+ * someone who has since closed their laptop can still be attributed.
+ */
+export interface PeerRecord {
+  name: string;
+  role: Role;
+}
+
 /** Which side of the debate gives a speech. Drawn as a shade, not a label. */
 export type Side = "aff" | "neg";
 

@@ -1,0 +1,23 @@
+/* The whole stylesheet, in cascade order.
+ *
+ * The order is load-bearing in one place: several `.flow-argument` rules and
+ * their `--edit` variants tie on specificity and are resolved by which comes
+ * later, so argument.css must stay last and its own rules must stay in the
+ * order they're written in.
+ *
+ * tokens    every colour and metric, plus the dark theme
+ * app       the page and the zoom scale the sheet is drawn at
+ * status    the status line pinned along the bottom
+ * sidebar   the sheets in the round, down the left
+ * sheet     the grid: columns, side bands, headers, cells, focus mode
+ * peers     where everyone else's cursor is
+ * argument  an argument's text, the cursor on it, and the editor over it
+ */
+
+@import "./tokens.css";
+@import "./app.css";
+@import "./status.css";
+@import "./sidebar.css";
+@import "./sheet.css";
+@import "./peers.css";
+@import "./argument.css";

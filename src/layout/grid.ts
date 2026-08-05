@@ -1,4 +1,4 @@
-import type { Argument, Mark, Placed } from "./types";
+import type { Argument, Mark, Placed } from "../model/types";
 
 /**
  * Turning a flow into grid coordinates. All pure functions over plain data —
@@ -30,8 +30,11 @@ function computeSpans(roots: Argument[]): Map<string, number> {
 
 /**
  * What to write beside each of `siblings`, keyed by id: its place in whatever
- * sequence its mark belongs to, or null when it's the only one of its kind and
- * a bare "1." would be noise.
+ * sequence its mark belongs to, starting at 1/a regardless of how many other
+ * arguments share it. A lone marked argument still gets a "1." rather than
+ * nothing — the mark itself is the point being made ("this is my first
+ * argument, more may follow"), and a blank would read the same as `none`,
+ * which says the opposite: this argument was never meant to be counted.
  *
  * `num` and `alpha` are not symmetric, on purpose — they answer different
  * questions. `num` is the outline's backbone: the sequence of responses to one
@@ -74,7 +77,6 @@ function markIndices(siblings: Argument[]): Map<string, number | null> {
 
   const out = new Map<string, number | null>();
   for (const column of bySpeech.values()) {
-    const numTotal = column.filter((c) => c.mark === "num").length;
     let numSeen = 0;
 
     // The run `alpha` is currently counting — cleared every time a `num`
@@ -82,7 +84,7 @@ function markIndices(siblings: Argument[]): Map<string, number | null> {
     // argument, which never touches it at all).
     let run: Argument[] = [];
     const flushRun = () => {
-      run.forEach((c, i) => out.set(c.id, run.length > 1 ? i + 1 : null));
+      run.forEach((c, i) => out.set(c.id, i + 1));
       run = [];
     };
 
@@ -90,7 +92,7 @@ function markIndices(siblings: Argument[]): Map<string, number | null> {
       if (c.mark === "num") {
         flushRun();
         numSeen++;
-        out.set(c.id, numTotal > 1 ? numSeen : null);
+        out.set(c.id, numSeen);
       } else if (c.mark === "alpha") {
         run.push(c);
       } else {
@@ -141,9 +143,9 @@ export function layoutFlow(roots: Argument[]): Placed[] {
 
 /**
  * What to write beside an argument: its place among the arguments marked as it
- * is, in the notation it is marked with. Empty when the argument carries no
- * mark, or when `layoutFlow` found nothing to count it against — the only one
- * of its kind in the column, where a bare "1." is just noise.
+ * is, in the notation it is marked with. Empty only when the argument carries
+ * no mark at all — see `markIndices` for why a lone marked argument still
+ * gets a "1." rather than nothing.
  *
  * Letters run a, b, … z, aa, ab — the spreadsheet column sequence. A flow will
  * never get there, but a rule that runs out is worse than one that doesn't.

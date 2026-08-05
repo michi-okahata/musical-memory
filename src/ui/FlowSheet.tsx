@@ -1,7 +1,15 @@
-import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { layoutFlow, markerOf, measureRows } from "./layout_engine";
-import { selectionRange } from "./navigate";
-import { FOCUS_REACH, type Argument, type Placed, type Speech } from "./types";
+import React, {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
+import { layoutFlow, markerOf, measureRows } from "../layout/grid";
+import { selectionRange } from "../layout/navigate";
+import { FOCUS_REACH, type Argument, type Placed, type Speech } from "../model/types";
+import type { Peer } from "../sync/presence";
 
 /**
  * The row gap lives here rather than in the stylesheet because the row heights
@@ -33,7 +41,7 @@ const COLLAPSED_PX = 24;
 const inFocus = (col: number, focus: number | null) =>
   focus === null || Math.abs(col - focus) <= FOCUS_REACH;
 
-interface DebateFlowProps {
+interface FlowSheetProps {
   roots: Argument[];
   /** The columns, in order: what each speech is called and how wide it gets. */
   speeches: Speech[];
@@ -62,9 +70,15 @@ interface DebateFlowProps {
    * itself is scaled in CSS; this is here for the metrics that can't be.
    */
   zoom?: number;
+  /**
+   * Everyone else in the room. Drawn where their cursors are — the sheet is
+   * the only place that answer means anything, and a list of names in a corner
+   * would make you look away from the flow to read it.
+   */
+  peers?: Peer[];
 }
 
-export function DebateFlow({
+export function FlowSheet({
   roots,
   speeches,
   renderArgument,
@@ -73,7 +87,8 @@ export function DebateFlow({
   selectAnchor = null,
   focus = null,
   zoom = 1,
-}: DebateFlowProps): React.ReactElement {
+  peers = [],
+}: FlowSheetProps): React.ReactElement {
   const ownPlaced = useMemo(
     () => (placedProp ? [] : layoutFlow(roots)),
     [roots, placedProp],
@@ -100,6 +115,25 @@ export function DebateFlow({
     roots.forEach(walk);
     return m;
   }, [roots]);
+
+  // Where everyone else is, keyed by the argument they're on — grouped,
+  // because two peers can be on one argument and the cell has to be told
+  // about that rather than styled twice.
+  //
+  // Peers on an argument this sheet hasn't got yet are dropped: a cursor
+  // arrives in a presence message, which can beat the argument it points at
+  // through the relay by a tick.
+  const peersByArgument = useMemo(() => {
+    const placedIds = new Set(placed.map((p) => p.id));
+    const groups = new Map<string, Peer[]>();
+    for (const peer of peers) {
+      if (!peer.cursorId || !placedIds.has(peer.cursorId)) continue;
+      const group = groups.get(peer.cursorId);
+      if (group) group.push(peer);
+      else groups.set(peer.cursorId, [peer]);
+    }
+    return groups;
+  }, [peers, placed]);
 
   // Cells are `align-self: start`, so each cell's box is its argument's
   // natural height — measuring it can't feed back into the track sizes we set.
@@ -161,9 +195,20 @@ export function DebateFlow({
   // the grid is exactly as tall as its arguments, and the bands stop in
   // mid-air at the last row — which reads as the sheet ending rather than the
   // speech being empty.
-  const gridTemplateRows = rowHeights.length
-    ? ["auto", ...rowHeights.map((h) => `${h}px`), "1fr"].join(" ")
-    : undefined;
+  //
+  // `rowHeights.length` stands in for "the first measurement has landed", so
+  // the template stays `undefined` (and the bands sit on the header alone —
+  // see .flow-band) until it has. That signal never fires on a genuinely
+  // empty flow: there is nothing to measure, so the *correct* measurement is
+  // itself a zero-length array, indistinguishable from "not measured yet".
+  // `placed.length === 0` is decidable up front, without waiting on an
+  // effect, so it skips the wait rather than hanging in it forever.
+  const gridTemplateRows =
+    placed.length === 0
+      ? "auto 1fr"
+      : rowHeights.length
+        ? ["auto", ...rowHeights.map((h) => `${h}px`), "1fr"].join(" ")
+        : undefined;
 
   return (
     // Only the track lists are inline — they depend on the speeches. Every
@@ -196,7 +241,9 @@ export function DebateFlow({
       {speeches.map((speech, i) => (
         <div
           key={`b-${i}`}
-          className={`flow-band is-${speech.side}`}
+          className={`flow-band is-${speech.side}${
+            inFocus(i, focus) ? "" : " is-collapsed"
+          }`}
           style={{
             gridColumn: i + 1,
             gridRow: gridTemplateRows ? "1 / -1" : "1 / span 1",
@@ -251,6 +298,16 @@ export function DebateFlow({
       {placed.map((p) => {
         const arg = byId.get(p.id)!;
         const marker = markerOf(p.index, arg.mark);
+        // Somebody else's cursor, if one is here. Their cursor is drawn the
+        // way yours is — the rule, the wash, the hairline — in their colour
+        // instead of the accent, so "where is my partner" is answered by the
+        // same shape you already read your own position from, and nothing is
+        // added to the sheet that has to be looked at separately. Who they are
+        // is on the status line; the sheet only says where.
+        //
+        // The first of them when several share an argument: the colour has one
+        // slot, and the list of names is downstairs.
+        const peer = peersByArgument.get(p.id)?.[0];
         return (
           <div
             key={p.id}
@@ -271,12 +328,27 @@ export function DebateFlow({
             // `.flow-selection`, above.
             className={`flow-cell${inFocus(p.col, focus) ? "" : " is-collapsed"}${
               p.id === cursorId ? " is-cursor" : ""
-            }`}
+            }${peer ? " is-peer" : ""}${peer?.editing ? " is-peer-editing" : ""}`}
+            title={peer ? `${peer.name}${peer.editing ? " is writing here" : " is here"}` : undefined}
             // Placement comes from `layoutFlow` — inherently per-node, so it
             // cannot live in a stylesheet.
             style={{
               gridColumn: p.col + 1,
               gridRow: `${p.row + 1 + headerOffset} / span ${p.span}`,
+              // Row 0 sits a row-gap short of the header's own underline —
+              // pulled up by exactly that gap and padded back down by the
+              // same amount, so the border-left reaches the line instead of
+              // stopping short of it, and the text lands where it always did.
+              // A collapsed argument has no baseline to preserve, only a
+              // rectangle — padding it back down would reopen the gap as a
+              // bare strip above the block, so it stays pulled flush instead.
+              ...(p.row === 0 && {
+                marginTop: -rowGap,
+                paddingTop: inFocus(p.col, focus) ? rowGap : 0,
+              }),
+              // The peer's own colour, handed to the stylesheet — it is per
+              // peer, so it cannot be authored there. See peers.css.
+              ...(peer && ({ "--peer": peer.color } as CSSProperties)),
             }}
           >
             {/* Only when there is one to draw. The mark is text now — it takes
@@ -287,6 +359,7 @@ export function DebateFlow({
           </div>
         );
       })}
+
     </div>
   );
 }

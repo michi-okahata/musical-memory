@@ -1,4 +1,4 @@
-import type { Placed } from "./types";
+import type { Placed } from "../model/types";
 
 export type Motion = "h" | "j" | "k" | "l";
 

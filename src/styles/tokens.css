@@ -1,0 +1,107 @@
+:root {
+  /* Text is the interface, so the type is the one thing that gets to be
+     opinionated: the platform UI face for the flow itself (proportional wins
+     on words-per-column, which is the whole game at 10px), and a mono face
+     for the status line, where the point is that it looks like a terminal. */
+  --font-ui: ui-sans-serif, -apple-system, "SF Pro Text", "Segoe UI", system-ui,
+    sans-serif;
+  --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
+
+  font-family: var(--font-ui);
+  font-size: 11px;
+  line-height: 1.4;
+  font-weight: 400;
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-text-size-adjust: 100%;
+
+  color: var(--argument-fg);
+  background-color: var(--sheet);
+
+  /* ---- flow design tokens ---------------------------------------------
+     Everything static about an argument lives here. Per-node values the
+     layout computes (grid column / row / span) stay inline in the component.
+
+     The palette is one hue — a violet-leaning neutral — plus a single accent
+     drawn from it. Nothing else is coloured, so the two things that *are* (the
+     cursor, and which side of the debate a column belongs to) don't have to
+     compete with anything to be seen. */
+
+  /* The page, and with it the affirmative columns: the sheet is the aff
+     surface, so only one side carries a shade and the other is simply paper.
+     See --band-neg. */
+  --sheet: #f8f7fa;
+  /* Arguments are transparent — see .flow-argument. That is what retires the
+     old rule that the sheet and the argument surface had to be the same
+     colour: a reserved cell (a row inflated by a tall neighbour) and the
+     argument beside it are now painted by the same element, so they cannot
+     drift apart. */
+  --argument-fg: #201f26;
+  --argument-line-height: 1.35;
+
+  /* ---- sides ----------------------------------------------------------
+     Which side a column belongs to, as a shade rather than a colour: the neg
+     speeches sit on a band a few percent darker than the sheet, the aff ones
+     on the sheet itself. Big enough areas that a few percent is plenty, and
+     quiet enough that it never reads as a highlight — which the cursor is the
+     only thing entitled to do. */
+  --band-aff: var(--sheet);
+  --band-neg: #eeebf3;
+
+  /* The one accent. Purple, but the quiet end of it — a saturated magenta at
+     10px on paper is a shout, and the cursor has to sit on screen for an hour
+     at a time. */
+  --accent: #7a5ba6;
+  /* The cursor is a wash plus a hairline, not a ring: at these row heights a
+     2px ring is thicker than the gap between two arguments. */
+  --cursor: var(--accent);
+  --cursor-bg: rgba(122, 91, 166, 0.13);
+  --cursor-ring: rgba(122, 91, 166, 0.38);
+  --accent-soft: rgba(122, 91, 166, 0.11);
+
+  --muted: #8b8794;
+  --placeholder: #aaa6b4;
+  /* The rule down the left of every argument. Structural, and there is one
+     per argument, so it stops short of black — at this density full black
+     reads as a grid of bars rather than as text with a margin. */
+  --argument-border: #33303c;
+  --rule: #dcd8e4;
+  --argument-hover: rgba(32, 31, 38, 0.04);
+  /* The fill of an argument in a collapsed speech; its size is zoomed, below.
+     Translucent so one value reads correctly over either side's band. */
+  --collapsed-fill: rgba(51, 48, 60, 0.22);
+  --collapsed-hover: rgba(51, 48, 60, 0.42);
+  /* How close the cursor may get to the top or bottom before the sheet
+     scrolls to keep it in comfortable view. */
+  --scroll-keepout: 25vh;
+}
+
+/* Desktop apps should follow the OS theme. Only the tokens change; no
+   component needs to know which theme is active — and because the side bands
+   and the cursor are tokens too, they follow for free. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --sheet: #1a191f;
+    --band-neg: #232028;
+    --argument-fg: #e3e0e9;
+    --argument-border: #4c4759;
+    --rule: #2e2b36;
+    --argument-hover: rgba(227, 224, 233, 0.05);
+
+    /* Lilac rather than violet: the same accent one step lighter and less
+       saturated, which is what it takes to stay quiet against a dark sheet. */
+    --accent: #b9a1e0;
+    --cursor: var(--accent);
+    --cursor-bg: rgba(185, 161, 224, 0.16);
+    --cursor-ring: rgba(185, 161, 224, 0.45);
+    --accent-soft: rgba(185, 161, 224, 0.14);
+
+    --muted: #837e91;
+    --placeholder: #6a6577;
+    --collapsed-fill: rgba(227, 224, 233, 0.22);
+    --collapsed-hover: rgba(227, 224, 233, 0.42);
+  }
+}

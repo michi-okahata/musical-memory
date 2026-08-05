@@ -1,0 +1,71 @@
+/* ---- page ------------------------------------------------------------ */
+
+/* The sheet's inset is `.app`'s padding and nothing else — the browser's
+   default body margin was another eight pixels on top of it, on a sheet whose
+   every other metric is zoomed. */
+body {
+  margin: 0;
+}
+
+.app {
+  /* A hair of side margin, so the number gutter of the first speech isn't
+     pressed against the window edge — and, at the other end, so the last
+     speech's band closes instead of running off the screen.
+     Clear of the status line at the bottom, which is pinned over the sheet. */
+  padding: 0 calc(5px * var(--zoom)) var(--status-height);
+  text-align: left;
+  /* The sheets down the left, the flow taking everything else. A row rather
+     than a fixed sidebar, so hiding the list gives its width back to the
+     columns instead of leaving a margin. */
+  display: flex;
+  align-items: flex-start;
+
+  /* ---- zoom -----------------------------------------------------------
+     Every metric the sheet is drawn at, in terms of one multiplier, which
+     `App` sets inline from the editor state (the 1 below is the fallback,
+     and the size the flow is authored at). The authored pixel values are
+     unchanged — they have only moved inside a calc().
+
+     A flow is typed small enough that "readable across a table" and "a
+     whole round on screen" are genuinely different sheets, and zoom is how
+     you get from one to the other. So it is the type *and* everything bound
+     to it: shrink the font alone and the number gutter, the padding and the
+     collapsed marks stay put, and the sheet comes apart.
+
+     Declared here rather than at `:root` because a custom property is
+     substituted where it is declared, not where it is used: written at
+     `:root`, `var(--zoom)` would read the root's own value and never see
+     the one set on this element. Two metrics can't be expressed this way at
+     all — see `scaled` in FlowSheet.tsx. */
+  --zoom: 1;
+  /* The status line at the bottom is drawn at the sheet's own size, same as
+     everything above it — a status line that stayed 10px while the sheet
+     grew to 20 would be unreadable at exactly the zoom level meant to make
+     the sheet readable. */
+  --status-height: calc(20px * var(--zoom));
+  --argument-font-size: calc(10px * var(--zoom));
+  /* Tight, and asymmetric: the 3px on the left is the whole distance between
+     the rule and the first letter, and it is doing real work at 10px type.
+     The same 3px is what separates a number from the text it numbers. */
+  --argument-pad: 0 calc(2px * var(--zoom)) 0 calc(3px * var(--zoom));
+  --argument-gutter: calc(3px * var(--zoom));
+  /* How tall the rectangle standing in for an argument in a collapsed speech
+     is. */
+  --collapsed-mark: calc(14px * var(--zoom));
+  --column-gap: calc(7px * var(--zoom));
+  /* How far a side band reaches past its own column, into the gutter: exactly
+     half, so neighbouring bands meet in the middle of it and the gutter belongs
+     to neither speech. See .flow-band for why that matters. */
+  --band-bleed: calc(var(--column-gap) / 2);
+  /* The speech names, and what they shrink to once collapsed. */
+  --header-font-size: calc(11px * var(--zoom));
+  --header-collapsed-font-size: calc(8px * var(--zoom));
+}
+
+/* The flow itself, beside the list of sheets. `min-width: 0` is what lets the
+   speech columns shrink: without it the grid takes its content's width as its
+   minimum and a full round pushes off the right of the window. */
+.app__flow {
+  flex: 1 1 auto;
+  min-width: 0;
+}

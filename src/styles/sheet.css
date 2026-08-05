@@ -1,0 +1,225 @@
+/* ---- flow grid ------------------------------------------------------- */
+.flow-grid {
+  display: grid;
+  grid-auto-rows: min-content;
+  /* Down to the status line at least, so the trailing `1fr` track (see
+     FlowSheet.tsx) has height to give the side bands. The window less the
+     status line is exactly what `.app` reserves for the sheet. */
+  min-height: calc(100vh - var(--status-height));
+  /* Row gap is set inline — `measureRows` has to know it. */
+  column-gap: var(--column-gap);
+  align-items: start;
+}
+
+/* ---- sides ------------------------------------------------------------
+   One band per speech, behind everything, running the whole height of the
+   sheet: the flow's own answer to "whose speech am I reading". It has to be a
+   band and not an argument colour, because half of what tells you a column is
+   a column is the empty space in it — the rows a tall neighbour reserved, the
+   gaps between arguments, the run of sheet below the last argument.
+
+   Painted by an element rather than by the grid's background so it tracks the
+   column tracks exactly, focus mode included: when a speech narrows to 24px,
+   its band narrows with it. */
+.flow-band {
+  align-self: stretch; /* the grid sets `align-items: start` for the cells */
+  pointer-events: none;
+  /* Out into half the gutter on each side, so the bands meet rather than
+     leaving a strip of sheet between them.
+
+     Not cosmetic. Painting only one side leaves the gutter looking like it
+     belongs to whichever column *isn't* shaded: an aff speech's numbers then
+     appear to sit a whole gutter further in than a neg speech's, because the
+     nearest visible edge to their left is where the previous band ended, a gap
+     away. Splitting the gutter down the middle gives every column the same
+     visible left edge whichever side it is on.
+
+     Two speeches from the same side sitting next to each other therefore read
+     as one band. That is right for the two the format actually has — the 2NC
+     and 1NR *are* one column here — and it is what a reader wants anyway. */
+  margin-inline: calc(-1 * var(--band-bleed));
+}
+
+/* Both sides are named, though one of them is the sheet's own colour: the
+   asymmetry is a choice about how loud the sheet should be, not a fact about
+   the aff, and giving it a shade of its own should mean changing a token. */
+.flow-band.is-aff {
+  background: var(--band-aff);
+}
+
+.flow-band.is-neg {
+  background: var(--band-neg);
+}
+
+/* A collapsed speech is a shape, not a side any more — the sliver is too
+   narrow to read as aff or neg, so carrying the tint there is just noise
+   next to the three speeches actually in focus. */
+.flow-band.is-collapsed {
+  filter: grayscale(1);
+}
+
+.flow-header {
+  grid-row: 1;
+  font-weight: 600;
+  font-size: var(--header-font-size);
+  letter-spacing: 0.02em;
+  /* Same bleed as the band it caps, so a speech's shading is one shape from
+     the label down. The left padding carries the bleed back, which is what
+     keeps the label over the argument text below it rather than out in the
+     gutter. It also makes the underline continuous across the sheet — the
+     gutters used to break it into seven. */
+  margin-inline: calc(-1 * var(--band-bleed));
+  /* The 1px is the arguments' rule, which the label clears rather than sits
+     on. */
+  padding: 1px 0 2px calc(var(--band-bleed) + 1px + var(--argument-gutter));
+  color: var(--argument-fg);
+  /* Stays put on a long flow; the sheet scrolls under it. */
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--sheet);
+  border-bottom: 1px solid var(--rule);
+  /* The underline has to read as one line across the whole sheet, so every
+     header fills the row rather than taking its own text's height — a
+     collapsed speech sets its label smaller, and left alone that would step
+     its border up by a few pixels. Labels sit on the bottom so the different
+     sizes still share a line. */
+  align-self: stretch;
+  display: flex;
+  align-items: flex-end;
+}
+
+/* Parents keep their natural height instead of filling their row span.
+   The rule down the left belongs to the cell rather than to the argument,
+   which is what puts the number inside it: number and text are two items in
+   the same box, and the rule opens the box. */
+.flow-cell {
+  align-self: start;
+  display: flex;
+  align-items: flex-start;
+  border-left: 1px solid var(--argument-border);
+  /* The band already bleeds half the gutter to either side to meet its
+     neighbours (see .flow-band) — left alone, the cell would sit that same
+     half-gutter short of the band's edges on both sides, and the cursor's
+     wash and ring (worn by this cell — see .flow-cell.is-cursor) would stop
+     short of where the colour actually does, reading as though the column
+     were narrower than its band. Bleeding the cell out to meet the band on
+     both sides, and padding only the left edge back, keeps the rule flush
+     and the number where it always sat, while the right edge — nothing is
+     anchored to it — is free to bleed out with no padding to undo. */
+  margin-inline: calc(-1 * var(--band-bleed));
+  padding-left: var(--band-bleed);
+  /* Keep the cursor off the edges: the sheet starts scrolling once the
+     argument gets within a quarter of the window of the top or bottom, so you
+     can always see what you're flowing into.
+     This is the whole implementation — `scrollIntoView({block: "nearest"})`
+     scrolls only far enough to fit the element *plus its scroll margin*, so a
+     quarter-window margin means no scrolling at all while the argument sits
+     in the middle half, and a minimal correction the moment it leaves. The
+     `max()` keeps an argument clear of the sticky header and the status line
+     on a window too short for the quarter to cover them. */
+  scroll-margin-top: max(var(--scroll-keepout), 24px);
+  scroll-margin-bottom: max(
+    var(--scroll-keepout),
+    calc(var(--status-height) + 4px)
+  );
+}
+
+/* A visual selection: the same accent wash the cursor uses, quieter and with
+   no rule or ring of its own — those two are what say "this exact argument",
+   and a selection has no single argument to say it about.
+
+   One band spanning the whole selection (see FlowSheet.tsx), not a wash per
+   cell: painted per cell, the row gap between two selected arguments stayed
+   the bare sheet colour, and read as a seam between two separate things
+   rather than as the inside of one selected run. A `gridRow` *range* is what
+   covers that gap — the same way a spanning argument's own box does — where
+   `span` on a single cell could not.
+
+   Behind the cells in paint order (it comes earlier in the DOM), so the
+   cursor's own, stronger background still shows through on top of it where
+   the two overlap. */
+.flow-selection {
+  /* The grid's `align-items: start` sizes every item to its own content by
+     default — empty here, so without this the band would collapse to 0
+     height instead of filling the row range it was given. Same fix
+     `.flow-band` needed, same reason. */
+  align-self: stretch;
+  pointer-events: none;
+  background: var(--accent-soft);
+}
+
+/* ---- focus mode -------------------------------------------------------
+   A collapsed speech keeps only its shape: one rectangle per argument, in the
+   row the argument occupies, so you can still see where the answers fell.
+   `font-size: 0` is what removes the text — it takes the line boxes with it,
+   so the fixed height below is the argument's whole contribution and a
+   collapsed column can never inflate a row the focused speeches share. */
+.flow-cell.is-collapsed .flow-argument {
+  height: var(--collapsed-mark);
+  font-size: 0;
+  overflow: hidden;
+  background: var(--collapsed-fill);
+  cursor: pointer;
+}
+
+/* No rule either. It marks where an argument's text begins, and a collapsed
+   argument has no text to begin — all that's left is the block itself, and a
+   line down one side of it just makes it look like an argument that failed to
+   render. Dropped rather than hidden, so the block gets the full 24px instead
+   of 23 and a column of them reads as one clean stack. */
+.flow-cell.is-collapsed {
+  border-left: 0;
+}
+
+.flow-cell.is-collapsed .flow-argument:hover {
+  background: var(--collapsed-hover);
+}
+
+/* The cursor inside a speech that's out of focus: the rectangle is all there
+   is to colour, so it takes the accent whole. Cheap, and it is the only way to
+   see where you are while the cursor is somewhere you aren't reading. */
+.flow-cell.is-collapsed.is-cursor .flow-argument {
+  background: var(--cursor);
+}
+
+/* No room for the number beside a 24px column, and nothing to number against. */
+.flow-cell.is-collapsed .flow-num {
+  display: none;
+}
+
+.flow-header.is-collapsed {
+  color: var(--muted);
+  font-weight: 400;
+  font-size: var(--header-collapsed-font-size);
+  overflow: hidden;
+}
+
+/* The number reads as the first thing in the argument rather than as a column
+   of its own: it takes the width of its digits and no more, and the text
+   starts a gutter after it. So it sits exactly where the first word would
+   have, and a two-digit number pushes the text along instead of overflowing a
+   box sized for one digit.
+   The text still hangs — the argument is the flex item beside this one, so a
+   wrapped line returns to the text, not under the number, which is what a
+   numbered list does. */
+.flow-num {
+  flex: none;
+  padding-left: var(--argument-gutter);
+  font-size: var(--argument-font-size);
+  line-height: var(--argument-line-height);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+}
+
+/* Where one argument ends and the next begins. Zero height so it can't
+   disturb the measured row tracks; centred in the row gap. */
+.flow-rule {
+  align-self: start;
+  height: 0;
+  margin-top: -1px;
+  border-top: 1px solid var(--rule);
+  pointer-events: none;
+  z-index: 1;
+}

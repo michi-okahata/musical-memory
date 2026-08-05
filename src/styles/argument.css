@@ -1,0 +1,117 @@
+/* ---- argument ---------------------------------------------------------- */
+.flow-argument {
+  /* The rule is the cell's (see .flow-cell). Zeroed here because a textarea
+     comes with a UA border, and the edit box would sit a couple of pixels off
+     the argument. */
+  border: 0;
+  padding: var(--argument-pad);
+  font-family: inherit;
+  font-size: var(--argument-font-size);
+  line-height: var(--argument-line-height);
+  /* Transparent, so the argument takes the colour of the side band behind it.
+     An argument that painted its own surface would have to be told which side
+     it was on, and — worse — would be a second source of truth for a colour
+     the reserved cells around it get from the band. */
+  background: none;
+  color: var(--argument-fg);
+  cursor: pointer;
+  /* Identical wrapping in display and edit so the edit box never grows
+     taller than the argument (which would open a gap in the parent column). */
+  box-sizing: border-box;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.flow-argument:hover {
+  background: var(--argument-hover);
+}
+
+/* The cursor: the left rule going accent-coloured, a wash across the
+   argument, and a hairline around it. Three quiet signals rather than one
+   loud one — the wash is what you find from across the sheet, the rule is
+   what tells you the exact argument, and none of them changes the argument's
+   size, so moving the cursor doesn't move the flow.
+   Worn by the cell, not the argument, so the number is inside the highlight —
+   it is part of the argument now — and so the three layers of the editor,
+   which all carry the argument's class, can't each stack another copy of the
+   wash. */
+.flow-cell.is-cursor {
+  border-color: var(--cursor);
+  background: var(--cursor-bg);
+  box-shadow: 0 0 0 1px var(--cursor-ring);
+  /* Tight gaps mean neighbours would clip the ring — lift it above them. A
+     grid item takes z-index without being positioned. */
+  z-index: 1;
+}
+
+.flow-argument:focus-visible {
+  outline: 2px solid var(--cursor);
+  outline-offset: -2px;
+}
+
+.flow-argument__placeholder {
+  color: var(--placeholder);
+}
+
+/* ---- argument editor ----------------------------------------------------
+   Three superimposed layers (see ArgumentEditor.tsx). The sizer is the only
+   one in flow; the other two are stretched over it, so all three wrap alike. */
+.flow-editor {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.flow-editor__sizer {
+  /* Holds the box open at the height of the real text, and nothing else. */
+  visibility: hidden;
+}
+
+.flow-editor__ghost,
+.flow-argument--edit {
+  position: absolute;
+  inset: 0;
+}
+
+.flow-editor__ghost {
+  overflow: hidden;
+  pointer-events: none;
+  background: none;
+  /* The suggestion is drawn in place, which means everything around it has to
+     be laid out and not painted. */
+  color: var(--placeholder);
+}
+
+.flow-editor__hidden {
+  visibility: hidden;
+}
+
+.flow-editor__suggest {
+  color: var(--muted);
+}
+
+/* Editing variant — same box, textarea resets only. */
+.flow-argument--edit {
+  display: block;
+  resize: none;
+  outline: none;
+  cursor: text;
+  overflow: hidden;
+  /* Transparent, so the suggestion behind it shows through. */
+  background: transparent;
+}
+
+.flow-argument--edit:hover {
+  background: transparent;
+}
+
+/* The edit box is inside a cell already showing the cursor three ways — the
+   rule, the wash, the hairline. A focus ring is a fourth saying the same thing,
+   and the loudest of them. The `outline: none` above can't stop it on its own:
+   the textarea is the only `.flow-argument` anything can focus, so
+   `.flow-argument:focus-visible` always applies, and it wins on specificity. */
+.flow-argument--edit:focus-visible {
+  outline: none;
+}
