@@ -1,9 +1,12 @@
-import type { Placed } from "../model/types";
+import type { Argument, Placed } from "../model/types";
 
 export type Motion = "h" | "j" | "k" | "l";
 
 /**
- * Vim-style spatial navigation over the laid-out flow grid.
+ * What the cursor implicates: where it can go (the motions), what it has
+ * ranged over (a selection), and what it is connected to (the thread).
+ *
+ * The motions are spatial — vim over the laid-out grid:
  *
  * - `j` / `k`: next / previous argument in the same column (by row).
  * - `h` / `l`: jump to the nearest non-empty column left / right, landing on
@@ -63,6 +66,50 @@ export function selectionRange(
   const ci = column.findIndex((p) => p.id === cursor.id);
   const [lo, hi] = ai <= ci ? [ai, ci] : [ci, ai];
   return column.slice(lo, hi + 1);
+}
+
+/**
+ * The cursor's thread: everything its own argument answers, all the way back to
+ * the root, plus everything that answers it.
+ *
+ * A flow says which argument answers which by putting them on the same row, one
+ * column along — which is the whole grammar of the sheet and is also invisible
+ * the moment a column gets busy. Six answers in the Block sit against six rows
+ * of the 2AC, and the one you are reading is a row you have to trace by eye
+ * across a couple of hundred pixels. This is that trace, drawn.
+ *
+ * Ancestors rather than the enclosing tree, because the ancestors are a *path* —
+ * at most one argument per column — so however deep the exchange gets, the
+ * thread stays a line marching left, and never becomes a wash over half the
+ * sheet. Forwards, only the direct answers: everything under those is a
+ * different question ("what did they say to that") asked from a different
+ * cursor.
+ *
+ * The cursor's own argument is not in it. It is already saying where it is,
+ * three ways, and this set is drawn as "related to where you are".
+ */
+export function threadOf(roots: Argument[], cursorId: string | null): Set<string> {
+  const thread = new Set<string>();
+  if (!cursorId) return thread;
+
+  // Carries the path down rather than building a parent map: the tree is walked
+  // once either way, and stopping at the cursor means the common case — a
+  // cursor near the top of a long sheet — doesn't touch the rest of it.
+  const ancestors: Argument[] = [];
+  const walk = (node: Argument): boolean => {
+    if (node.id === cursorId) {
+      for (const up of ancestors) thread.add(up.id);
+      for (const answer of node.children) thread.add(answer.id);
+      return true;
+    }
+    ancestors.push(node);
+    const found = node.children.some(walk);
+    ancestors.pop();
+    return found;
+  };
+  roots.some(walk);
+
+  return thread;
 }
 
 /**

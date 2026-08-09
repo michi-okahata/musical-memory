@@ -11,6 +11,7 @@
  * sidebar   the sheets in the round, down the left
  * sheet     the grid: columns, side bands, headers, cells, focus mode
  * peers     where everyone else's cursor is
+ * keymap    what the keys do, over the sheet on `:?`
  * argument  an argument's text, the cursor on it, and the editor over it
  */
 
@@ -20,4 +21,5 @@
 @import "./sidebar.css";
 @import "./sheet.css";
 @import "./peers.css";
+@import "./keymap.css";
 @import "./argument.css";

@@ -177,6 +177,19 @@ export function completionAt(
   return best && best.slice(prefix.length);
 }
 
+/**
+ * Every word in `texts`, for the `extra` half of `buildDictionary` — which is
+ * how the answers a user has memorized get their vocabulary onto a sheet that
+ * has not seen them yet (see memory/store.ts).
+ */
+export function wordsIn(texts: Iterable<string>): string[] {
+  const out: string[] = [];
+  for (const text of texts) {
+    for (const match of text.matchAll(WORD)) out.push(match[0]);
+  }
+  return out;
+}
+
 /** Every piece of text on a flow, for `buildDictionary`. */
 export function textsOf(roots: Argument[]): string[] {
   const out: string[] = [];

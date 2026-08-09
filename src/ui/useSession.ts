@@ -50,6 +50,8 @@ export interface SessionActions {
   rename: (name: string) => void;
   /** Point at a relay somebody else is running. Empty resets to the default. */
   useRelay: (host: string) => void;
+  /** Show a round opened from disk instead of the one on screen. */
+  load: (round: Round) => void;
   /** Tell the room where this peer's cursor is. */
   setLocal: (update: {
     cursorId?: string | null;
@@ -208,6 +210,8 @@ export function useSession(seed?: (round: Round) => void): UseSession {
         else clearRelayUrl();
         session.setRelayUrl(url);
       },
+
+      load: (round: Round) => session.load(round),
 
       setLocal: (update) => session.setLocal(update),
 

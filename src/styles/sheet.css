@@ -6,8 +6,9 @@
      FlowSheet.tsx) has height to give the side bands. The window less the
      status line is exactly what `.app` reserves for the sheet. */
   min-height: calc(100vh - var(--status-height));
-  /* Row gap is set inline — `measureRows` has to know it. */
-  column-gap: var(--column-gap);
+  /* No column gap: a speech's gutter is part of the speech (see --column-gap),
+     so the tracks sit flush and one track is one column, exactly. Row gap is
+     set inline — `measureRows` has to know it. */
   align-items: start;
 }
 
@@ -19,25 +20,17 @@
    gaps between arguments, the run of sheet below the last argument.
 
    Painted by an element rather than by the grid's background so it tracks the
-   column tracks exactly, focus mode included: when a speech narrows to 24px,
-   its band narrows with it. */
+   column tracks exactly, focus mode included: the speeches left on screen
+   share the sheet out again, and each band takes its column's new width.
+
+   Exactly its track, edge to edge — the tracks are flush, so the bands meet
+   with nothing between them and every column has the same visible left edge
+   whichever side it is on. Two speeches from the same side sitting next to
+   each other therefore read as one band. That is right for the two the format
+   actually has — the 2NC and 1NR *are* one column here. */
 .flow-band {
   align-self: stretch; /* the grid sets `align-items: start` for the cells */
   pointer-events: none;
-  /* Out into half the gutter on each side, so the bands meet rather than
-     leaving a strip of sheet between them.
-
-     Not cosmetic. Painting only one side leaves the gutter looking like it
-     belongs to whichever column *isn't* shaded: an aff speech's numbers then
-     appear to sit a whole gutter further in than a neg speech's, because the
-     nearest visible edge to their left is where the previous band ended, a gap
-     away. Splitting the gutter down the middle gives every column the same
-     visible left edge whichever side it is on.
-
-     Two speeches from the same side sitting next to each other therefore read
-     as one band. That is right for the two the format actually has — the 2NC
-     and 1NR *are* one column here — and it is what a reader wants anyway. */
-  margin-inline: calc(-1 * var(--band-bleed));
 }
 
 /* Both sides are named, though one of them is the sheet's own colour: the
@@ -51,27 +44,17 @@
   background: var(--band-neg);
 }
 
-/* A collapsed speech is a shape, not a side any more — the sliver is too
-   narrow to read as aff or neg, so carrying the tint there is just noise
-   next to the three speeches actually in focus. */
-.flow-band.is-collapsed {
-  filter: grayscale(1);
-}
-
 .flow-header {
   grid-row: 1;
   font-weight: 600;
   font-size: var(--header-font-size);
   letter-spacing: 0.02em;
-  /* Same bleed as the band it caps, so a speech's shading is one shape from
-     the label down. The left padding carries the bleed back, which is what
-     keeps the label over the argument text below it rather than out in the
-     gutter. It also makes the underline continuous across the sheet — the
-     gutters used to break it into seven. */
-  margin-inline: calc(-1 * var(--band-bleed));
-  /* The 1px is the arguments' rule, which the label clears rather than sits
-     on. */
-  padding: 1px 0 2px calc(var(--band-bleed) + 1px + var(--argument-gutter));
+  /* Fills its track, same as the band it caps, so a speech's shading is one
+     shape from the label down and the underline runs unbroken across the
+     sheet. The left padding puts the label over the argument text below it:
+     the 1px is the arguments' rule, which the label clears rather than sits
+     on, and the gutter after it is the one the numbers keep. */
+  padding: 1px var(--column-gap) 2px calc(1px + var(--argument-gutter));
   color: var(--argument-fg);
   /* Stays put on a long flow; the sheet scrolls under it. */
   position: sticky;
@@ -84,9 +67,26 @@
      collapsed speech sets its label smaller, and left alone that would step
      its border up by a few pixels. Labels sit on the bottom so the different
      sizes still share a line. */
-  align-self: stretch;
-  display: flex;
-  align-items: flex-end;
+}
+
+/* The speech the cursor is in. The headers are sticky, so this is the one
+   part of a column that is on screen however far down the flow you have got —
+   which makes it the cheapest place to answer "which speech am I writing in",
+   a question the sheet otherwise leaves entirely to the cursor's own position
+   in a row of seven near-identical columns.
+   The underline takes the accent for the length of that column and the label
+   is left alone. Only the underline, because the label is set in the sheet's
+   own ink and the accent is not guaranteed to be louder than ink — recolouring
+   it can read as *dimmed*, i.e. as the one column that isn't current. The rule
+   it replaces has no such problem: `--rule` is the faintest line on the sheet
+   by construction, so any accent is an emphasis against it, on either theme.
+
+   Breaking the header's underline is the one liberty taken with "one line
+   across the whole sheet" (see .flow-header): a marked segment directly under
+   a label is a tab indicator, which is read as pointing at the column rather
+   than as a seam in the line. */
+.flow-header.is-current {
+  border-bottom-color: var(--accent);
 }
 
 /* Parents keep their natural height instead of filling their row span.
@@ -98,17 +98,12 @@
   display: flex;
   align-items: flex-start;
   border-left: 1px solid var(--argument-border);
-  /* The band already bleeds half the gutter to either side to meet its
-     neighbours (see .flow-band) — left alone, the cell would sit that same
-     half-gutter short of the band's edges on both sides, and the cursor's
-     wash and ring (worn by this cell — see .flow-cell.is-cursor) would stop
-     short of where the colour actually does, reading as though the column
-     were narrower than its band. Bleeding the cell out to meet the band on
-     both sides, and padding only the left edge back, keeps the rule flush
-     and the number where it always sat, while the right edge — nothing is
-     anchored to it — is free to bleed out with no padding to undo. */
-  margin-inline: calc(-1 * var(--band-bleed));
-  padding-left: var(--band-bleed);
+  /* The cell is its track, exactly as the band is, so the cursor's wash and
+     ring (worn by this cell — see .flow-cell.is-cursor) cover the whole
+     column and the rule sits flush with the band's left edge. The gutter is
+     the padding on the right: the argument's text stops there rather than
+     running up against the next speech's rule. */
+  padding-right: var(--column-gap);
   /* Keep the cursor off the edges: the sheet starts scrolling once the
      argument gets within a quarter of the window of the top or bottom, so you
      can always see what you're flowing into.
@@ -123,6 +118,56 @@
     var(--scroll-keepout),
     calc(var(--status-height) + 4px)
   );
+}
+
+/* The thread: what the cursor's argument answers, back to the root, and what
+   answers it (see `threadOf`). A flow says which argument answers which by
+   putting them on one row, one column along — the whole grammar of the sheet,
+   and invisible the moment a column fills up, since the row you want is a
+   couple of hundred pixels of empty band away from the argument you are
+   reading. This is that row, drawn.
+
+   The rule already there, going to the sheet's strongest ink: no wash, no
+   ring. Those two are the cursor's, and they are what makes the one argument
+   you are on findable from across the sheet — a thread wearing either would
+   put six equally loud marks up and lose the cursor among the arguments it
+   merely relates to. A rule can carry the rest because a rule is already the
+   sheet's word for "this exact argument": every argument has one, so
+   re-inking six of them adds no shape and changes no metric.
+
+   Colour and not weight, which is what this was first. A doubled rule reads
+   more strongly, and it still had to go: `is-analytic` below draws the rule
+   *dotted*, the second line that weight needs is solid, and so every threaded
+   analytic quietly filled its own dots back in. Two facts about one rule can
+   only coexist on two different properties of it.
+
+   Deliberately weaker than `.flow-cell.is-cursor` (argument.css) and
+   `.is-peer` (peers.css), both of which come later in the cascade and so win
+   the border colour outright: where you are beats what you are connected to,
+   and so does where somebody else is. */
+.flow-cell.is-thread {
+  border-left-color: var(--thread);
+}
+
+/* An analytic: something they said, rather than something they read. See
+   `Support` — a card is the default and keeps the solid rule the sheet has
+   always drawn, so this is the only one of the two that costs anything to
+   look at, and a debater who never presses `c` never sees it.
+
+   The rule's *style*, which is the last free channel on it: colour is the
+   cursor's and somebody else's, weight is the thread's, and style belongs to
+   neither. That is what lets all three be true at once — an analytic on the
+   cursor's thread, under your partner's cursor, still reads as an analytic,
+   because `is-cursor` and `is-peer` set only `border-color` and never touch
+   this. Which is right: where you are is a fact about the view and evaporates,
+   and whether they had a card is a fact about the round.
+
+   Dotted rather than dashed because the cells are short — fourteen pixels at
+   the authored size — and a dash long enough to read as a dash is most of a
+   one-line argument's height, so a dashed rule and a solid one differ only in
+   where they happen to start. */
+.flow-cell.is-analytic {
+  border-left-style: dotted;
 }
 
 /* A visual selection: the same accent wash the cursor uses, quieter and with
@@ -149,52 +194,6 @@
   background: var(--accent-soft);
 }
 
-/* ---- focus mode -------------------------------------------------------
-   A collapsed speech keeps only its shape: one rectangle per argument, in the
-   row the argument occupies, so you can still see where the answers fell.
-   `font-size: 0` is what removes the text — it takes the line boxes with it,
-   so the fixed height below is the argument's whole contribution and a
-   collapsed column can never inflate a row the focused speeches share. */
-.flow-cell.is-collapsed .flow-argument {
-  height: var(--collapsed-mark);
-  font-size: 0;
-  overflow: hidden;
-  background: var(--collapsed-fill);
-  cursor: pointer;
-}
-
-/* No rule either. It marks where an argument's text begins, and a collapsed
-   argument has no text to begin — all that's left is the block itself, and a
-   line down one side of it just makes it look like an argument that failed to
-   render. Dropped rather than hidden, so the block gets the full 24px instead
-   of 23 and a column of them reads as one clean stack. */
-.flow-cell.is-collapsed {
-  border-left: 0;
-}
-
-.flow-cell.is-collapsed .flow-argument:hover {
-  background: var(--collapsed-hover);
-}
-
-/* The cursor inside a speech that's out of focus: the rectangle is all there
-   is to colour, so it takes the accent whole. Cheap, and it is the only way to
-   see where you are while the cursor is somewhere you aren't reading. */
-.flow-cell.is-collapsed.is-cursor .flow-argument {
-  background: var(--cursor);
-}
-
-/* No room for the number beside a 24px column, and nothing to number against. */
-.flow-cell.is-collapsed .flow-num {
-  display: none;
-}
-
-.flow-header.is-collapsed {
-  color: var(--muted);
-  font-weight: 400;
-  font-size: var(--header-collapsed-font-size);
-  overflow: hidden;
-}
-
 /* The number reads as the first thing in the argument rather than as a column
    of its own: it takes the width of its digits and no more, and the text
    starts a gutter after it. So it sits exactly where the first word would
@@ -211,6 +210,35 @@
   color: var(--muted);
   font-variant-numeric: tabular-nums;
   user-select: none;
+}
+
+/* What to press on a sheet that has nothing on it yet. In the slot the first
+   argument will take, at the sheet's own size and its quietest ink — it is not
+   an empty state to be designed around, it is the one moment the flow has room
+   to say something, and it stops existing as soon as it is acted on. */
+.flow-empty {
+  margin: 0;
+  /* Lines up with the text of the argument that will replace it: the 1px the
+     cell's rule would take, plus the gutter its number keeps. */
+  padding-left: calc(1px + var(--argument-gutter));
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: calc(4px * var(--zoom));
+  font-size: var(--argument-font-size);
+  line-height: var(--argument-line-height);
+  color: var(--placeholder);
+  user-select: none;
+}
+
+.flow-empty dd {
+  margin: 0;
+}
+
+/* The keys in the mono face, as they are everywhere else they are written
+   down — the status line, and the panel the second of these opens. */
+.flow-empty kbd {
+  font-family: var(--font-mono);
+  color: var(--muted);
 }
 
 /* Where one argument ends and the next begins. Zero height so it can't

@@ -25,55 +25,102 @@
      Everything static about an argument lives here. Per-node values the
      layout computes (grid column / row / span) stay inline in the component.
 
-     The palette is one hue — a violet-leaning neutral — plus a single accent
-     drawn from it. Nothing else is coloured, so the two things that *are* (the
-     cursor, and which side of the debate a column belongs to) don't have to
-     compete with anything to be seen. */
+     The palette has no hue in it. Not a near-neutral tinted one way — no hue
+     at all: paper, ink, and the greys between them. What a flow is made of is
+     twenty words in a column an inch wide, and everything the sheet has to say
+     about them (which side said it, where you are, what answers what) is said
+     in *tone* — how light, how dark, how heavy. Tone is the one channel that
+     stays legible at 10px, survives being photographed off a laptop screen in
+     a classroom, and doesn't have to be re-tuned for a dark theme.
+
+     Which leaves colour meaning exactly one thing in this app: somebody else.
+     A peer's cursor is drawn in a hue from a hash of their peer id (see
+     `peerColor`), and it is now the only chromatic thing on screen — so the
+     answer to "is that me or my partner" no longer depends on telling one
+     purple from another. See peers.css. */
 
   /* The page, and with it the affirmative columns: the sheet is the aff
      surface, so only one side carries a shade and the other is simply paper.
-     See --band-neg. */
-  --sheet: #f8f7fa;
+     Not pure white — a flow is read for two hours at a time. See --band-neg. */
+  --sheet: #f8f8f8;
   /* Arguments are transparent — see .flow-argument. That is what retires the
      old rule that the sheet and the argument surface had to be the same
      colour: a reserved cell (a row inflated by a tall neighbour) and the
      argument beside it are now painted by the same element, so they cannot
      drift apart. */
-  --argument-fg: #201f26;
+  --argument-fg: #1e1e1e;
   --argument-line-height: 1.35;
 
   /* ---- sides ----------------------------------------------------------
-     Which side a column belongs to, as a shade rather than a colour: the neg
-     speeches sit on a band a few percent darker than the sheet, the aff ones
-     on the sheet itself. Big enough areas that a few percent is plenty, and
-     quiet enough that it never reads as a highlight — which the cursor is the
-     only thing entitled to do. */
+     Which side a column belongs to, as a shade: the neg speeches sit on a band
+     a few percent darker than the sheet, the aff ones on the sheet itself.
+     Big enough areas that a few percent is plenty, and quiet enough that it
+     never reads as a highlight — which the cursor is the only thing entitled
+     to do. This was always tone rather than colour; it is simply the only
+     thing in the palette that didn't have to change. */
   --band-aff: var(--sheet);
-  --band-neg: #eeebf3;
+  --band-neg: #ebebeb;
 
-  /* The one accent. Purple, but the quiet end of it — a saturated magenta at
-     10px on paper is a shout, and the cursor has to sit on screen for an hour
-     at a time. */
-  --accent: #7a5ba6;
+  /* The strongest ink on the sheet, and the cursor's own. Named `accent`
+     because of the job it does — the one thing allowed to stand out — rather
+     than because it is a colour, which it deliberately isn't any more.
+
+     Darker than the argument text, by a little. That is the whole trick of a
+     monochrome cursor: with no hue to be *other* than the sheet, it has to be
+     more of what the sheet already is, and being blacker than the blackest
+     thing on the page is the only direction left. It inverts cleanly on a dark
+     theme, where the same rule makes it the lightest thing instead. */
+  --accent: #111111;
   /* The cursor is a wash plus a hairline, not a ring: at these row heights a
-     2px ring is thicker than the gap between two arguments. */
-  --cursor: var(--accent);
-  --cursor-bg: rgba(122, 91, 166, 0.13);
-  --cursor-ring: rgba(122, 91, 166, 0.38);
-  --accent-soft: rgba(122, 91, 166, 0.11);
+     2px ring is thicker than the gap between two arguments.
 
-  --muted: #8b8794;
-  --placeholder: #aaa6b4;
+     The wash does most of the work now. At a glance an area of tone is found
+     far faster than a 1px line, and a line can no longer announce itself by
+     changing colour — so the wash is pitched well clear of --band-neg (it has
+     to read as "here", never as "this is a negative speech"), and the hairline
+     is firm enough to draw the exact edge once your eye has arrived. */
+  --cursor: var(--accent);
+  --cursor-bg: rgba(0, 0, 0, 0.13);
+  --cursor-ring: rgba(0, 0, 0, 0.5);
+  /* A wash for the things that are true but not urgent: a visual selection,
+     the chips on the status line. Pitched at about half the cursor's, so the
+     two never argue about which one is "here". */
+  --accent-soft: rgba(0, 0, 0, 0.07);
+
+  --muted: #888888;
+  --placeholder: #ababab;
   /* The rule down the left of every argument. Structural, and there is one
-     per argument, so it stops short of black — at this density full black
-     reads as a grid of bars rather than as text with a margin. */
-  --argument-border: #33303c;
-  --rule: #dcd8e4;
-  --argument-hover: rgba(32, 31, 38, 0.04);
-  /* The fill of an argument in a collapsed speech; its size is zoomed, below.
-     Translucent so one value reads correctly over either side's band. */
-  --collapsed-fill: rgba(51, 48, 60, 0.22);
-  --collapsed-hover: rgba(51, 48, 60, 0.42);
+     per argument, so it stops well short of black — at this density full black
+     reads as a grid of bars rather than as text with a margin.
+
+     How far short is set by what has to be legible *against* it, which on a
+     sheet with no hue is a lot: the cursor's rule, the thread's, and a peer's
+     are all the same rule in a different ink, and a rule that started near
+     black left them nowhere to go. Mid grey is what opens that gap. It also
+     quiets the sheet, which is the direction this was already heading — a
+     column of arguments should read as text with a margin, and the margin is
+     not the part you are looking at. */
+  --argument-border: #6b6b6b;
+  /* The cursor's thread — what its argument answers, and what answers it.
+     The strongest ink, so the sheet's left rules read in two steps: ordinary
+     argument, and argument on the line you are reading.
+
+     Ink rather than weight, which is what this was first. Weight (the rule
+     drawn twice as heavy) is the more legible of the two on its own, and it
+     had to go anyway: `Support` draws an analytic's rule *dotted*, and the
+     second line weight needs is solid, so every threaded analytic filled its
+     own dots back in and stopped reading as an analytic. Colour leaves the
+     rule's style alone, so the two compose.
+
+     Safe here in a way it would not be in a palette with hue: `--accent` is
+     defined above as the strongest ink there is, so "the thread is the accent"
+     is guaranteed to mean darker on a light sheet and brighter on a dark one.
+     Under the old purple that guarantee did not exist, and a thread lighter
+     than the ink drew the exchange you are reading *fainter* than the
+     arguments it runs past. */
+  --thread: var(--accent);
+  --rule: #d9d9d9;
+  --argument-hover: rgba(0, 0, 0, 0.04);
   /* How close the cursor may get to the top or bottom before the sheet
      scrolls to keep it in comfortable view. */
   --scroll-keepout: 25vh;
@@ -81,27 +128,30 @@
 
 /* Desktop apps should follow the OS theme. Only the tokens change; no
    component needs to know which theme is active — and because the side bands
-   and the cursor are tokens too, they follow for free. */
+   and the cursor are tokens too, they follow for free.
+
+   Without hue this is a genuine inversion rather than a second palette to keep
+   in sync: every value here is the light one's counterpart on the same scale,
+   and the light theme's argument ("the cursor is the strongest ink") comes
+   through unchanged as "the cursor is the brightest". Nothing had to be
+   re-tuned to stay quiet against a dark sheet, which is what the old lilac
+   existed to do. */
 @media (prefers-color-scheme: dark) {
   :root {
-    --sheet: #1a191f;
-    --band-neg: #232028;
-    --argument-fg: #e3e0e9;
-    --argument-border: #4c4759;
-    --rule: #2e2b36;
-    --argument-hover: rgba(227, 224, 233, 0.05);
+    --sheet: #1a1a1a;
+    --band-neg: #242424;
+    --argument-fg: #e4e4e4;
+    --argument-border: #575757;
+    --rule: #2e2e2e;
+    --argument-hover: rgba(255, 255, 255, 0.05);
 
-    /* Lilac rather than violet: the same accent one step lighter and less
-       saturated, which is what it takes to stay quiet against a dark sheet. */
-    --accent: #b9a1e0;
+    --accent: #fafafa;
     --cursor: var(--accent);
-    --cursor-bg: rgba(185, 161, 224, 0.16);
-    --cursor-ring: rgba(185, 161, 224, 0.45);
-    --accent-soft: rgba(185, 161, 224, 0.14);
+    --cursor-bg: rgba(255, 255, 255, 0.14);
+    --cursor-ring: rgba(255, 255, 255, 0.55);
+    --accent-soft: rgba(255, 255, 255, 0.08);
 
-    --muted: #837e91;
-    --placeholder: #6a6577;
-    --collapsed-fill: rgba(227, 224, 233, 0.22);
-    --collapsed-hover: rgba(227, 224, 233, 0.42);
+    --muted: #858585;
+    --placeholder: #666666;
   }
 }

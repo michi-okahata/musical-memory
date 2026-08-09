@@ -217,6 +217,35 @@ export class FlowSession {
   }
 
   /**
+   * Adopt a round opened from disk, in place of the one on screen.
+   *
+   * Leaves the room first, and for the same reason `join` replaces the document
+   * rather than merging into it: your copy of a shared round is not yours to
+   * swap out from under everyone. Broadcasting the new document would put both
+   * rounds on your partner's sheet at once, interleaved, with nothing to say
+   * which arguments came from where. Opening a file is leaving.
+   *
+   * The other direction works, and is the ordinary one: open last night's
+   * round, then `:host` it.
+   */
+  load(round: Round): void {
+    if (this.state.room) this.leave();
+    this.attach(round);
+    const sheets = round.sheets();
+    const activeSheet = sheets[0]?.id ?? null;
+    this.local = { ...this.local, sheet: activeSheet };
+    this.patch({
+      round,
+      sheets,
+      activeSheet,
+      flow: activeSheet ? round.flow(activeSheet) : null,
+      roots: activeSheet ? round.flow(activeSheet).roots() : [],
+      me: toPeer(round.peerId, this.local),
+      error: null,
+    });
+  }
+
+  /**
    * Point at a different relay. Reconnects if we're in a room, since the room
    * is a room *on* a relay and the code alone doesn't name it.
    */

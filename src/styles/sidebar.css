@@ -22,8 +22,10 @@
   overflow: hidden;
   border-right: 1px solid var(--rule);
   /* Clears the sheet's own top padding so the first sheet name lines up with
-     the speech headers. */
+     the speech headers. The left inset is the sidebar's own — the page has no
+     side padding, because the flow's columns run to the window edge. */
   padding-right: calc(6px * var(--zoom));
+  margin-left: calc(5px * var(--zoom));
   margin-right: calc(4px * var(--zoom));
 }
 
@@ -34,7 +36,7 @@
   /* The same line the speech headers sit on, and the same rule under it, so
      the sidebar reads as part of the sheet rather than a panel stuck to it. */
   font-family: var(--font-mono);
-  font-size: calc(9px * var(--zoom));
+  font-size: var(--header-font-size);
   letter-spacing: 0.04em;
   color: var(--muted);
   padding: 1px 0 2px;
@@ -128,6 +130,30 @@
   width: calc(4px * var(--zoom));
   height: calc(4px * var(--zoom));
   border-radius: 50%;
+}
+
+/* Only on hover — a round with a handful of positions doesn't need an × sitting
+   next to every name all the time, and the accidental click a permanent one
+   invites is worse than the extra reach a hidden one costs. */
+.app__sheet-delete {
+  flex: none;
+  display: none;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: calc(11px * var(--zoom));
+  line-height: 1;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 0 calc(2px * var(--zoom));
+}
+
+.app__sheet:hover .app__sheet-delete {
+  display: block;
+}
+
+.app__sheet-delete:hover {
+  color: var(--accent);
 }
 
 .app__sheets-empty {

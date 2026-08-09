@@ -1,6 +1,13 @@
 import { LoroDoc, LoroText } from "loro-crdt";
 import type { LoroTree, LoroTreeNode, TreeID } from "loro-crdt";
-import { DEFAULT_MARK, type Argument, type Mark } from "./types";
+import {
+  DEFAULT_MARK,
+  DEFAULT_SUPPORT,
+  type Argument,
+  type Copied,
+  type Mark,
+  type Support,
+} from "./types";
 
 /**
  * One sheet of a flow: the tree of arguments on a single position, and the
@@ -68,6 +75,12 @@ export interface ArgumentInit {
    * argument added to it afterwards agrees without being asked.
    */
   mark?: Mark;
+  /**
+   * Whether it was read off evidence. Defaults to its same-speech neighbour's,
+   * on exactly the same terms as `mark` — a debater reading a block of cards
+   * says so once, not once per card.
+   */
+  support?: Support;
 }
 
 /** Resolved placement: which parent, which slot, and the column to default to. */
@@ -166,6 +179,7 @@ export class Flow {
     // continues that run. Done here rather than in the keymap so every way of
     // making an argument — a binding, a paste, a drop — inherits alike.
     const mark = init.mark ?? this.neighborMark(siblings, at.index, speech);
+    const support = init.support ?? this.neighborSupport(siblings, at.index, speech);
     const node = at.parent
       ? at.parent.createNode(at.index)
       : this.tree.createNode(undefined, at.index);
@@ -174,40 +188,69 @@ export class Flow {
     if (init.text) text.insert(0, init.text);
     node.data.set("speech", speech);
     node.data.set("mark", mark);
+    node.data.set("support", support);
     this.commit();
     return node.id;
   }
 
   /**
-   * The mark a new argument should start with: its same-speech neighbour's,
-   * found by scanning outward from the insertion point — backward first,
-   * since an argument usually continues the run before it, then forward for
-   * one inserted at the very start of the list. The document default if the
-   * list has nothing in that speech yet.
+   * What a new argument should inherit from the argument it lands beside: read
+   * off its same-speech neighbour, found by scanning outward from the insertion
+   * point — backward first, since an argument usually continues the run before
+   * it, then forward for one inserted at the very start of the list. The
+   * document default if the list has nothing in that speech yet.
    *
    * `siblings` mixes every speech together (it's `parent.children()` as Loro
    * keeps it, or the roots) because `index` — the slot `resolve` computed — is
    * a position in that same mixed list, and the two must agree to find the
    * right neighbour.
+   *
+   * Generic over what is being read because the mark and the support inherit
+   * by the identical rule, and the rule is the fiddly part: which direction to
+   * scan first, and that only same-speech siblings count. Two copies of it
+   * would be two places to get that wrong.
    */
+  private inherited<T>(
+    siblings: LoroTreeNode[],
+    index: number | undefined,
+    speech: number,
+    read: (node: LoroTreeNode) => T,
+    fallback: T,
+  ): T {
+    const at = index ?? siblings.length;
+    for (let i = at - 1; i >= 0; i--) {
+      if (this.readSpeech(siblings[i]) === speech) return read(siblings[i]);
+    }
+    for (let i = at; i < siblings.length; i++) {
+      if (this.readSpeech(siblings[i]) === speech) return read(siblings[i]);
+    }
+    return fallback;
+  }
+
   private neighborMark(
     siblings: LoroTreeNode[],
     index: number | undefined,
     speech: number,
   ): Mark {
-    const at = index ?? siblings.length;
-    for (let i = at - 1; i >= 0; i--) {
-      if (this.readSpeech(siblings[i]) === speech) return readMark(siblings[i]);
-    }
-    for (let i = at; i < siblings.length; i++) {
-      if (this.readSpeech(siblings[i]) === speech) return readMark(siblings[i]);
-    }
-    return DEFAULT_MARK;
+    return this.inherited(siblings, index, speech, readMark, DEFAULT_MARK);
+  }
+
+  private neighborSupport(
+    siblings: LoroTreeNode[],
+    index: number | undefined,
+    speech: number,
+  ): Support {
+    return this.inherited(siblings, index, speech, readSupport, DEFAULT_SUPPORT);
   }
 
   /** How the argument's own run is marked — see `Mark`. */
   markOf(id: string): Mark {
     return readMark(this.requireNode(id));
+  }
+
+  /** Whether the argument was read off evidence — see `Support`. */
+  supportOf(id: string): Support {
+    return readSupport(this.requireNode(id));
   }
 
   /**
@@ -226,6 +269,20 @@ export class Flow {
     this.batch(() => {
       for (const id of ids) {
         if (this.has(id)) this.requireNode(id).data.set("mark", mark);
+      }
+    });
+  }
+
+  /**
+   * Say whether every argument in `ids` was read off evidence, in one commit —
+   * same shape as `setMarks`, and for the same reason: `c` over a selected run
+   * of a block is one undo step, not one per card.
+   */
+  setSupports(ids: string[], support: Support): void {
+    this.markCursor();
+    this.batch(() => {
+      for (const id of ids) {
+        if (this.has(id)) this.requireNode(id).data.set("support", support);
       }
     });
   }
@@ -277,6 +334,79 @@ export class Flow {
     where: "after" | "before" = "after",
   ): TreeID {
     return this.add({ root: near, before: where === "before" }, { text, speech });
+  }
+
+  /**
+   * Take an argument off the sheet as plain data — it and everything
+   * responding to it — without changing anything. What `y` keeps; see `Copied`
+   * for why it is data and not ids.
+   */
+  copy(id: string): Copied {
+    const node = this.requireNode(id);
+    return {
+      text: readText(node),
+      mark: readMark(node),
+      support: readSupport(node),
+      speech: this.readSpeech(node),
+      children: (node.children() ?? []).map((child) => this.copy(child.id)),
+    };
+  }
+
+  /**
+   * Write a copy back in at `anchor`, in `speech`, responses and all. Returns
+   * the id of the argument at the top of it.
+   *
+   * One commit for the whole subtree, so putting an exchange back is one undo
+   * rather than one per argument.
+   *
+   * `lastSpeech` is the final column of the sheet being put onto, and a
+   * response with no column left to go in is *not put in* — nor is anything
+   * answering it. Two things make that case ordinary rather than defensive: the
+   * memory sheet is two columns wide (see memory/sheet.ts) where the round is
+   * seven, and a copy taken early in the round can always be put down late in
+   * it.
+   *
+   * Dropping is the least bad of three. Writing them past the last column
+   * leaves arguments the sheet never draws — in the document, invisible, and
+   * unreachable by the cursor. Flattening them *onto* the last column is worse
+   * still, and not merely untidy: a response drawn in its own parent's column
+   * is laid out at its parent's row (see `layoutFlow`), so the two land on top
+   * of each other and neither can be read. Leaving them out is the only one of
+   * the three whose result is a sheet, and nothing is lost that isn't still
+   * sitting in the copy — `u`, and put it somewhere with room.
+   *
+   * The mark comes with the copy rather than being inherited from whatever it
+   * lands next to, which is the one place a new argument doesn't follow its
+   * neighbour (see `neighborMark`). A copy is a copy — you took a lettered
+   * aside, you get a lettered aside — and `#` re-marks it if the run it landed
+   * in disagrees.
+   */
+  paste(anchor: Anchor, copied: Copied, speech: number, lastSpeech: number): TreeID {
+    return this.batch(() =>
+      this.pasteNode(anchor, copied, speech - copied.speech, lastSpeech),
+    );
+  }
+
+  /**
+   * `shift` is how far the whole copy is moving — the distance from the column
+   * its top was taken from to the one it is going into. Applied to every
+   * argument in it alike, which is what keeps an exchange's shape: the answers
+   * stay a speech later than the argument they answer, wherever it lands.
+   */
+  private pasteNode(anchor: Anchor, node: Copied, shift: number, last: number): TreeID {
+    const id = this.add(anchor, {
+      text: node.text,
+      mark: node.mark,
+      support: node.support,
+      speech: Math.max(node.speech + shift, 0),
+    });
+    for (const child of node.children) {
+      // Past the last speech there is no column to draw a response in, so it
+      // doesn't go in — and what answered *it* goes nowhere either, which needs
+      // no check of its own: this simply doesn't recurse.
+      if (child.speech + shift <= last) this.pasteNode({ under: id }, child, shift, last);
+    }
+    return id;
   }
 
   /** Turn an `Anchor` into a concrete parent + slot + default column. */
@@ -455,6 +585,18 @@ function readMark(node: LoroTreeNode): Mark {
   return m === "alpha" || m === "none" || m === "num" ? m : DEFAULT_MARK;
 }
 
+/**
+ * Whether the argument was read off evidence. Unrecognised the same way a mark
+ * is, and that branch is the ordinary case here rather than a defensive one:
+ * every argument written before `c` existed has no `support` at all, and reads
+ * as the default — which is why the default is the one that leaves those sheets
+ * looking exactly as they did.
+ */
+function readSupport(node: LoroTreeNode): Support {
+  const s = node.data.get("support");
+  return s === "analytic" || s === "card" ? s : DEFAULT_SUPPORT;
+}
+
 /** Convert a live Loro tree node into the immutable view `Argument`. */
 function toArgument(node: LoroTreeNode): Argument {
   return {
@@ -462,6 +604,7 @@ function toArgument(node: LoroTreeNode): Argument {
     text: readText(node),
     speech: (node.data.get("speech") as number) ?? 0,
     mark: readMark(node),
+    support: readSupport(node),
     children: (node.children() ?? []).map(toArgument),
   };
 }

@@ -19,6 +19,12 @@ import type { Peer } from "../sync/presence";
  */
 
 interface SidebarProps {
+  /**
+   * What the list is of. "sheets" for a round, "positions" for the memory
+   * sheet — where the same list, the same keys and the same marks are doing
+   * the same job one substrate over. See useMemoryRound.ts.
+   */
+  label: string;
   sheets: SheetInfo[];
   activeSheet: string | null;
   /** Everyone else, so each sheet can show who is on it. */
@@ -26,15 +32,19 @@ interface SidebarProps {
   onOpen: (sheetId: string) => void;
   onAdd: () => void;
   onRename: (sheetId: string, title: string) => void;
+  /** Remove a sheet and everything on it. Never the last one — see App. */
+  onDelete: (sheetId: string) => void;
 }
 
 export function Sidebar({
+  label,
   sheets,
   activeSheet,
   peers,
   onOpen,
   onAdd,
   onRename,
+  onDelete,
 }: SidebarProps): React.ReactElement {
   // Which sheet is being renamed, if any. Renaming in place rather than in a
   // dialog: a sheet gets its real name a minute after it is made — "DA" becomes
@@ -43,14 +53,14 @@ export function Sidebar({
   const [renaming, setRenaming] = useState<string | null>(null);
 
   return (
-    <nav className="app__sidebar" aria-label="sheets">
+    <nav className="app__sidebar" aria-label={label}>
       <div className="app__sidebar-head">
-        <span>sheets</span>
+        <span>{label}</span>
         <button
           type="button"
           className="app__sidebar-add"
           onClick={onAdd}
-          title="new sheet (:new)"
+          title={`new ${label.replace(/e?s$/, "")} (:new)`}
           // The sheet's keyboard belongs to the keymap; a focused button would
           // swallow the next keystroke meant for the flow.
           tabIndex={-1}
@@ -98,6 +108,24 @@ export function Sidebar({
                     />
                   ))}
                 </span>
+              )}
+
+              {/* Never the last sheet — a round with nowhere to put the next
+                  argument isn't a state a click should be able to reach, so
+                  the button that would leave the round there doesn't appear. */}
+              {sheets.length > 1 && (
+                <button
+                  type="button"
+                  className="app__sheet-delete"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDelete(sheet.id);
+                  }}
+                  title="delete sheet (:delete)"
+                  tabIndex={-1}
+                >
+                  ×
+                </button>
               )}
             </li>
           );

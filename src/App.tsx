@@ -7,10 +7,11 @@ import {
   type CSSProperties,
 } from "react";
 import { POLICY_SPEECHES } from "./model/format";
+import { MEMORY_SPEECHES } from "./memory/sheet";
 import { seedSample } from "./model/sample";
 import { layoutFlow } from "./layout/grid";
 import { selectionRange } from "./layout/navigate";
-import { buildDictionary, textsOf } from "./editor/completion";
+import { buildDictionary, textsOf, wordsIn } from "./editor/completion";
 import {
   cancelCommand,
   parseSessionCommand,
@@ -26,9 +27,13 @@ import {
 } from "./editor/state";
 import { ArgumentView } from "./ui/ArgumentView";
 import { FlowSheet } from "./ui/FlowSheet";
+import { Keymap } from "./ui/Keymap";
 import { Sidebar } from "./ui/Sidebar";
 import { StatusLine } from "./ui/StatusLine";
 import { useSession } from "./ui/useSession";
+import { useLibrary } from "./ui/useLibrary";
+import { useMemory } from "./ui/useMemory";
+import { useMemoryRound } from "./ui/useMemoryRound";
 import { useKeymap } from "./ui/useKeymap";
 import { useTextBuffer } from "./ui/useTextBuffer";
 import type { Argument } from "./model/types";
@@ -49,11 +54,11 @@ function App() {
   // is the session that replaces it when you join somebody's room. Alone, the
   // difference is invisible: no connection is opened until `:host` or `:join`.
   const {
-    round,
-    flow,
-    roots,
-    sheets,
-    activeSheet,
+    round: roundDoc,
+    flow: roundFlow,
+    roots: roundRoots,
+    sheets: roundSheets,
+    activeSheet: roundSheet,
     room,
     status,
     peers,
@@ -63,14 +68,95 @@ function App() {
     actions,
   } = useSession(seedSample);
   const [editor, setEditor] = useState(initialEditorState);
-  const { cursorId, editingId, count, focus, command, selectAnchor, sidebar, zoom } =
+  const { cursorId, editingId, count, focus, command, selectAnchor, sidebar, help, zoom } =
     editor;
+
+  // Where the round is kept. Bound by `:open` or the first `:save`, and from
+  // then on the flow is written out as it is taken down.
+  const library = useLibrary(roundDoc, actions.load);
+
+  // What the user carries between rounds: the answers they've memorized to
+  // arguments, kept in ~/.flow. Nothing to do with the round's own folder
+  // above — see memory/store.ts.
+  const memory = useMemory();
+
+  // The position the memory sheet opens on — whichever sheet `M` was pressed
+  // from, since that is the one you were thinking about.
+  const position = useMemo(
+    () => roundSheets.find((sheet) => sheet.id === roundSheet)?.title ?? "",
+    [roundSheets, roundSheet],
+  );
+  const memorySheet = useMemoryRound(memory, editor.memory, position);
+
+  // What is on screen: the round, or what you have memorized. Both are a round
+  // of sheets — that is the whole point of building the memory sheet as one —
+  // so everything below this line takes them from one place and never has to
+  // ask which it is drawing.
+  const showing = useMemo(
+    () =>
+      editor.memory && memorySheet.round
+        ? {
+            round: memorySheet.round,
+            flow: memorySheet.flow,
+            roots: memorySheet.roots,
+            sheets: memorySheet.sheets,
+            activeSheet: memorySheet.activeSheet,
+          }
+        : {
+            round: roundDoc,
+            flow: roundFlow,
+            roots: roundRoots,
+            sheets: roundSheets,
+            activeSheet: roundSheet,
+          },
+    [editor.memory, memorySheet, roundDoc, roundFlow, roundRoots, roundSheets, roundSheet],
+  );
+  const { round, flow, roots, sheets, activeSheet } = showing;
+
+  // The speeches the sheet is drawn in. A memory sheet has two columns — the
+  // argument and the answers to it — where the round has the format's seven.
+  const speeches = editor.memory ? MEMORY_SPEECHES : SPEECHES;
+
+  // What a keystroke does to the list on the left, on whichever substrate is
+  // showing. On the memory sheet the list is your positions, so `:new` starts
+  // one, renaming one moves every block under it, and deleting one throws the
+  // blocks away — all of it the same keys, one level up, as always.
+  const sheetActions = useMemo(
+    () =>
+      editor.memory && memorySheet.round
+        ? {
+            open: memorySheet.open,
+            add: (title: string) => memorySheet.round!.addSheet(title),
+            rename: (id: string, title: string) =>
+              memorySheet.round!.renameSheet(id, title),
+            remove: (id: string) => memorySheet.round!.removeSheet(id),
+            // Positions are kept in alphabetical order and there is nothing to
+            // read into where one sits, so there is nothing to reorder.
+            move: () => {},
+          }
+        : {
+            open: actions.openSheet,
+            add: actions.addSheet,
+            rename: actions.renameSheet,
+            remove: actions.removeSheet,
+            move: actions.moveSheet,
+          },
+    [editor.memory, memorySheet, actions],
+  );
 
   const placed = useMemo(() => layoutFlow(roots), [roots]);
 
   // Rebuilt as the flow changes, so completions pick up the round's own
-  // vocabulary as it's written.
-  const dictionary = useMemo(() => buildDictionary(textsOf(roots)), [roots]);
+  // vocabulary as it's written. Memorized answers feed it too: they are words
+  // this flower has already used, on a sheet that hasn't seen them yet.
+  const dictionary = useMemo(
+    () =>
+      buildDictionary(
+        textsOf(roots),
+        wordsIn(memory.blocks.flatMap((block) => block.answers)),
+      ),
+    [roots, memory.blocks],
+  );
 
   // How the cursor's own argument is marked, for the status line — but only
   // when it isn't the default. A run of one draws no mark at all (a bare "1."
@@ -83,6 +169,31 @@ function App() {
   const mark = useMemo(
     () => (cursorId && flow?.has(cursorId) ? flow.markOf(cursorId) : "num"),
     [roots, cursorId, flow],
+  );
+
+  // Whether the cursor's own argument was read off evidence, on exactly the
+  // terms `mark` above is: read from the document, keyed on `roots`, and
+  // reported to the status line only when it isn't the default. The sheet says
+  // this too (a dotted rule — see `.flow-cell.is-analytic`), but a dotted 1px
+  // rule is a thing you read while scanning a column, not while looking at one
+  // argument, and `c` is otherwise a key with no visible answer on a sheet you
+  // haven't marked up yet.
+  const support = useMemo(
+    () => (cursorId && flow?.has(cursorId) ? flow.supportOf(cursorId) : "card"),
+    [roots, cursorId, flow],
+  );
+
+  // How many answers are memorized to the cursor's own argument, for the
+  // status line — which is the only warning that `A` is about to put four
+  // arguments on the sheet. Keyed on `roots` like `mark` above, and for the
+  // same reason: it reads the document, and `roots` changing is the tick the
+  // document changed on.
+  const answers = useMemo(
+    () =>
+      !editor.memory && cursorId && flow?.has(cursorId)
+        ? (memory.answersTo(flow.textOf(cursorId), position)?.answers.length ?? 0)
+        : 0,
+    [roots, cursorId, flow, memory, editor.memory, position],
   );
 
   // The selection's size, for the status line. Derived rather than read off
@@ -120,12 +231,16 @@ function App() {
   // `roots` is a dependency because the speech an argument sits in can change
   // under a cursor that hasn't moved.
   useEffect(() => {
+    // Nothing while the memory sheet is up: those arguments are in a document
+    // nobody else has, so a peer told about one would draw a cursor on an
+    // argument that doesn't exist on their sheet.
+    const away = editor.memory;
     actions.setLocal({
-      cursorId,
-      editing: editingId !== null,
-      speech: cursorId && flow?.has(cursorId) ? flow.speechOf(cursorId) : null,
+      cursorId: away ? null : cursorId,
+      editing: !away && editingId !== null,
+      speech: !away && cursorId && flow?.has(cursorId) ? flow.speechOf(cursorId) : null,
     });
-  }, [actions, flow, roots, cursorId, editingId]);
+  }, [actions, flow, roots, cursorId, editingId, editor.memory]);
 
   const { beginText, queueText, flushText } = useTextBuffer(flow);
 
@@ -154,31 +269,51 @@ function App() {
     }
   }, [roots, cursorId, flow]);
 
+  // Coming back to a substrate, put the cursor back where it was on it — `M`
+  // stashes it under the sheet being left (see `toggleMemory`). Only ever
+  // restores: an ordinary sheet change has already been through `openSheet`,
+  // which leaves a cursor set, so this is a no-op there.
+  useEffect(() => {
+    setEditor((s) =>
+      s.cursorId === null && activeSheet && s.cursors[activeSheet]
+        ? { ...s, cursorId: s.cursors[activeSheet] }
+        : s,
+    );
+  }, [editor.memory, activeSheet]);
+
   // Opening a sheet: the session decides what is on screen, the editor state
   // remembers where you were on the one you left. Both halves in one place, so
   // a click in the sidebar and `]` do exactly the same thing.
   const open = useCallback(
     (sheetId: string) => {
       if (sheetId === activeSheet) return;
-      actions.openSheet(sheetId);
+      sheetActions.open(sheetId);
       setEditor((s) => openSheet(s, activeSheet, sheetId));
     },
-    [actions, activeSheet],
+    [sheetActions, activeSheet],
   );
 
   const sheetControls = useMemo<SheetControls>(
     () => ({
       list: sheets,
       active: activeSheet,
-      open: actions.openSheet,
-      move: actions.moveSheet,
+      open: sheetActions.open,
+      move: sheetActions.move,
     }),
-    [sheets, activeSheet, actions],
+    [sheets, activeSheet, sheetActions],
   );
 
   // Vim-style keyboard control. Suspended while editing an argument.
   useKeymap(
-    { state: editor, flow, round, placed, speeches: SPEECHES, sheets: sheetControls },
+    {
+      state: editor,
+      flow,
+      round,
+      placed,
+      speeches,
+      sheets: sheetControls,
+      memory,
+    },
     setEditor,
   );
 
@@ -196,7 +331,17 @@ function App() {
     const session = parseSessionCommand(commandRef.current ?? "");
     if (!session) {
       setEditor((s) =>
-        flow ? submitCommand({ state: s, flow, round, placed, speeches: SPEECHES, sheets: sheetControls }) : cancelCommand(s),
+        flow
+          ? submitCommand({
+              state: s,
+              flow,
+              round,
+              placed,
+              speeches,
+              sheets: sheetControls,
+              memory,
+            })
+          : cancelCommand(s),
       );
       return;
     }
@@ -221,12 +366,12 @@ function App() {
         actions.rename(session.name);
         break;
       case "new": {
-        const id = actions.addSheet(session.title || "untitled");
+        const id = sheetActions.add(session.title || "untitled");
         setEditor((s) => openSheet(s, activeSheet, id));
         break;
       }
       case "rename":
-        if (activeSheet) actions.renameSheet(activeSheet, session.title);
+        if (activeSheet) sheetActions.rename(activeSheet, session.title);
         break;
       case "sheet": {
         const id = resolveSheet(session.name, sheets);
@@ -237,10 +382,16 @@ function App() {
         // Never the last one: a round with no sheets has nowhere to put the
         // next argument, and the way to clear a sheet you don't want is to
         // delete what's on it.
-        if (activeSheet && sheets.length > 1) actions.removeSheet(activeSheet);
+        if (activeSheet && sheets.length > 1) sheetActions.remove(activeSheet);
+        break;
+      case "open":
+        library.open();
+        break;
+      case "save":
+        library.save();
         break;
     }
-  }, [actions, flow, placed, sheets, activeSheet, open, sheetControls]);
+  }, [actions, flow, placed, sheets, activeSheet, open, sheetControls, library, memory, sheetActions, speeches]);
 
   const renderArgument = (arg: Argument) => (
     <ArgumentView
@@ -271,22 +422,28 @@ function App() {
       style={{ "--zoom": zoom } as CSSProperties}
     >
       <Sidebar
+        label={editor.memory ? "positions" : "sheets"}
         sheets={sheets}
         activeSheet={activeSheet}
         peers={peers}
         onOpen={open}
         onAdd={() => {
-          const id = actions.addSheet("untitled");
+          const id = sheetActions.add("untitled");
           setEditor((s) => openSheet(s, activeSheet, id));
         }}
-        onRename={actions.renameSheet}
+        onRename={sheetActions.rename}
+        onDelete={(sheetId) => {
+          // Same rule `:delete` follows — never the last sheet. The Sidebar
+          // already hides the button in that case; this is the backstop.
+          if (sheets.length > 1) sheetActions.remove(sheetId);
+        }}
       />
 
       <div className="app__flow">
         <FlowSheet
           roots={roots}
           placed={placed}
-          speeches={SPEECHES}
+          speeches={speeches}
           cursorId={cursorId}
           selectAnchor={selectAnchor}
           focus={focus}
@@ -305,7 +462,8 @@ function App() {
         selecting={selectAnchor !== null}
         selectionSize={selectionSize}
         mark={mark}
-        focusLabel={focus === null ? null : (SPEECHES[focus]?.label ?? "")}
+        support={support}
+        focusLabel={focus === null ? null : (speeches[focus]?.label ?? "")}
         zoom={zoom}
         room={room}
         status={status}
@@ -313,6 +471,11 @@ function App() {
         invitation={invitation}
         hosting={hosting !== null}
         error={error}
+        savedIn={library.directory}
+        saveError={library.error}
+        answers={answers}
+        memory={editor.memory}
+        memoryError={memory.error}
         authorLabel={authorLabel}
         // Every one of these takes the *latest* state rather than the `editor`
         // this render closed over — see CommandLine.tsx. Hence also the
@@ -324,6 +487,11 @@ function App() {
           setEditor((s) => (s.command === null ? s : cancelCommand(s)))
         }
       />
+
+      {/* What the keys do, on `:?`. Last, so it paints over the sheet and the
+          status line both — it is the one thing in the app that is allowed to
+          be in front of the flow. */}
+      {help && <Keymap onClose={() => setEditor((s) => ({ ...s, help: false }))} />}
     </main>
   );
 }

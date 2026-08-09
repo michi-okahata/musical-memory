@@ -10,6 +10,13 @@
    `peerColor`), which is what lets one set of mixes below read correctly for
    anybody's colour on either theme.
 
+   These are the only hues in the app — the sheet itself is paper, ink and grey
+   (see tokens.css). That is not incidental: it means colour on a flow has
+   exactly one meaning, "somebody else is here", so a partner's cursor is told
+   from your own by its being coloured at all rather than by which colour it
+   is. It also gives the hashed hues the whole gamut to spread over, with
+   nothing of the app's own for one of them to collide with.
+
    Who they are is not on the sheet at all. Names are on the status line, where
    there is room to spell one; a tag out here would have to sit over the text
    of the argument it is pointing at, and a flow is dense enough already. */
@@ -46,27 +53,4 @@
     0 0 0 1px var(--cursor-ring),
     inset 0 0 0 1px color-mix(in srgb, var(--peer) 55%, transparent);
   z-index: 2;
-}
-
-/* In a speech that's out of focus there is no rule and no text — the argument
-   is a rectangle, so the rectangle is what carries the colour, exactly as it
-   does for your own cursor. */
-.flow-cell.is-collapsed.is-peer {
-  background: none;
-  box-shadow: none;
-}
-
-.flow-cell.is-collapsed.is-peer .flow-argument {
-  background: color-mix(in srgb, var(--peer) 60%, var(--collapsed-fill));
-}
-
-.flow-cell.is-collapsed.is-peer-editing .flow-argument {
-  background: var(--peer);
-}
-
-/* Your own cursor still wins in a collapsed speech: you can be looking at a
-   sliver of a column and you still have to be able to find yourself in it. */
-.flow-cell.is-collapsed.is-cursor.is-peer .flow-argument {
-  background: var(--cursor);
-  box-shadow: inset 0 0 0 1px var(--peer);
 }

@@ -1,4 +1,6 @@
+pub mod files;
 pub mod relay;
+pub mod store;
 
 use tauri::Manager;
 
@@ -54,8 +56,20 @@ fn relay_info(state: tauri::State<'_, relay::RelayState>) -> Option<relay::Relay
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .manage(relay::RelayState::default())
-        .invoke_handler(tauri::generate_handler![relay_start, relay_stop, relay_info])
+        .invoke_handler(tauri::generate_handler![
+            relay_start,
+            relay_stop,
+            relay_info,
+            files::files_pick_directory,
+            files::files_read_dir,
+            files::files_write,
+            files::files_remove,
+            store::store_blocks,
+            store::store_memorize,
+            store::store_rename_position,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

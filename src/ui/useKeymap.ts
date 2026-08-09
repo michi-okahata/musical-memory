@@ -19,7 +19,7 @@ export function useKeymap(
   ctx: Omit<CommandContext, "flow"> & { flow: CommandContext["flow"] | null },
   setEditor: Dispatch<SetStateAction<EditorState>>,
 ): void {
-  const { state, flow, round, placed, speeches, sheets } = ctx;
+  const { state, flow, round, placed, speeches, sheets, memory } = ctx;
 
   useEffect(() => {
     if (!flow) return;
@@ -30,12 +30,12 @@ export function useKeymap(
 
       // Run the command here, not inside the setState updater: commands mutate
       // the flow, and StrictMode double-invokes updaters in development.
-      const next = run(keyOf(e), { state, flow, round, placed, speeches, sheets });
+      const next = run(keyOf(e), { state, flow, round, placed, speeches, sheets, memory });
       if (!next) return;
       e.preventDefault();
       setEditor(next);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [state, flow, round, placed, speeches, sheets, setEditor]);
+  }, [state, flow, round, placed, speeches, sheets, memory, setEditor]);
 }

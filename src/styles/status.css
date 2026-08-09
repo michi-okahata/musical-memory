@@ -7,50 +7,59 @@
   height: var(--status-height);
   display: flex;
   align-items: center;
-  gap: calc(8px * var(--zoom));
+  gap: calc(2px * var(--zoom));
   padding: 0 calc(6px * var(--zoom));
   font-family: var(--font-mono);
   font-size: calc(10px * var(--zoom));
   color: var(--muted);
   background: var(--sheet);
   border-top: 1px solid var(--rule);
+  z-index: 2;
 }
 
-/* The hints: keys in the sheet's own ink, what they do in the status line's
-   muted grey, separators quieter still. Bold is what the line used to lean on
-   and it can't — at 10px a bold sans key is a smudge, so the emphasis is
-   carried by colour, which costs no weight.
+/* ---- the mode ---------------------------------------------------------
+   Which mode the keyboard is in, first on the line and always there. In a
+   modal editor that is the one thing the screen owes you unasked: every key
+   means something different depending on it, and an indicator you have to
+   locate before you can read it is one you stop consulting.
 
-   Truncated rather than wrapped: the status line is one line tall, and the
-   sheet's bottom margin is reserved from that number. A narrow window drops
-   hints off the end (they're ordered roughly by how often you want them) —
-   wrapping would push them off the bottom of the screen instead. */
-.app__hint {
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.app__hint kbd {
-  font: inherit;
-  color: var(--argument-fg);
-}
-
-.app__hint i {
-  font-style: normal;
-  opacity: 0.45;
-  padding: 0 calc(1px * var(--zoom));
-}
-
-/* Which mode is on, if any. Last on the line, where it doesn't shift the
-   hints around as it appears and disappears. A soft chip rather than an
-   outline: one more hairline box on a screen made of hairlines reads as
-   structure, and this is a state. */
+   So the slot never moves and never empties — only its weight changes. Wide
+   enough for the longest thing it says, so the count beside it doesn't shuffle
+   left and right as you go in and out of a mode. */
 .app__mode {
+  flex: none;
+  min-width: 8ch;
+  white-space: nowrap;
+  padding: calc(1px * var(--zoom)) calc(4px * var(--zoom));
+  border-radius: calc(2px * var(--zoom));
+  color: var(--accent);
+  background: var(--accent-soft);
+  user-select: none;
+}
+
+/* Normal is not news. It reads as the rest of the line does — no chip, no
+   accent — so that the wash appearing *is* the signal that the next key will
+   do something other than what you expect. */
+.app__mode.is-normal {
+  color: var(--placeholder);
+  background: none;
+}
+
+/* ---- flags ------------------------------------------------------------
+   What happens to be true of the argument under the cursor, or of the sheet
+   you are reading it on: who wrote it, how it's marked, whether it's
+   memorized, the pinned speech, the zoom. Not modes — nothing here changes
+   what a key does, which is why they are at the other end of the line from
+   the thing that does.
+
+   The same soft chip the mode wears, deliberately: they are the same kind of
+   small standing statement, and giving them a second visual language would
+   only mean two things to learn. A wash rather than an outline — one more
+   hairline box on a screen made of hairlines reads as structure. */
+.app__flag {
   margin-left: auto;
-  /* Never wraps and never shrinks: the hints give up their width first (they
-     truncate), because the modes are state and the hints are a reminder. */
+  /* Never wraps and never shrinks — the line is mostly empty now that the
+     hints have moved to `:?`, and what is left on it is all state. */
   flex: none;
   white-space: nowrap;
   padding: calc(1px * var(--zoom)) calc(5px * var(--zoom));
@@ -59,8 +68,8 @@
   background: var(--accent-soft);
 }
 
-/* Two of them (focus and zoom) can be on at once; only the first pushes. */
-.app__mode ~ .app__mode {
+/* Several can be on at once (focus and zoom, say); only the first pushes. */
+.app__flag ~ .app__flag {
   margin-left: 0;
 }
 
@@ -68,6 +77,7 @@
    The right-hand group starts at whichever of these comes first, so each one
    takes the push and everything after it sits alongside. */
 .app__room,
+.app__file,
 .app__peers {
   margin-left: auto;
   flex: none;
@@ -77,6 +87,7 @@
 }
 
 .app__room ~ *,
+.app__file ~ *,
 .app__peers ~ * {
   margin-left: 0;
 }
@@ -115,6 +126,34 @@
    same room, with you at the middle of it. */
 .app__room.is-hosting .app__room-dot {
   box-shadow: 0 0 0 1px var(--sheet), 0 0 0 calc(2px * var(--zoom)) var(--accent);
+}
+
+/* ---- where the round is kept ------------------------------------------
+   The folder the flow is being written to, named and nothing more. It reads as
+   quietly as the hints do, because it is a standing fact rather than news —
+   what it is there for is the glance that confirms the round is going
+   somewhere, and a chip that had to be *noticed* every time would be worse at
+   exactly that.
+
+   A leading mark rather than the word "saving", because the word is only true
+   for the half-second either side of a keystroke and the folder is true all
+   round. */
+.app__file::before {
+  content: "▸";
+  padding-right: calc(3px * var(--zoom));
+  opacity: 0.5;
+}
+
+/* Writing failed — a folder that went away, a disk with no room on it. In the
+   sheet's own ink, the same as the room errors: the flow is not being saved
+   and that is worth reading. */
+.app__file.is-error {
+  color: var(--argument-fg);
+}
+
+.app__file.is-error::before {
+  content: "!";
+  opacity: 1;
 }
 
 /* A bad code, a relay that wouldn't start. Sits where the room chip would be,
@@ -197,4 +236,14 @@
   min-width: 2ch;
   font-variant-numeric: tabular-nums;
   color: var(--cursor);
+}
+
+/* The memory sheet, flagged. In the accent rather than the flags' grey: every
+   other flag says something about how you are looking at the round, and this
+   one says you are not looking at the round. */
+.app__flag.is-memory {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: calc(2px * var(--zoom));
+  padding: calc(1px * var(--zoom)) calc(5px * var(--zoom));
 }

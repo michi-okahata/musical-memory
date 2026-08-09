@@ -1,6 +1,6 @@
 import type { Flow } from "../model/flow";
 import type { Round, SheetInfo } from "../model/round";
-import { FOCUS_REACH, type Placed, type Speech } from "../model/types";
+import { FOCUS_REACH, type Copied, type Placed, type Speech } from "../model/types";
 import { selectionRange } from "../layout/navigate";
 
 /**
@@ -11,11 +11,11 @@ import { selectionRange } from "../layout/navigate";
  * argument renderer — and none of them should have to pull in every command to
  * do it.
  *
- * The two `release*` functions below are the coherence rules: things that must
- * hold after any cursor movement, whatever caused it. They live here rather
- * than inside the motions so that *every* way of moving the cursor obeys them
- * — a keystroke, a jump to a far speech, an argument created two speeches
- * over, a click on a collapsed rectangle.
+ * `followFocus` and `releaseSelection` below are the coherence rules: things
+ * that must hold after any cursor movement, whatever caused it. They live here
+ * rather than inside the motions so that *every* way of moving the cursor
+ * obeys them — a keystroke, a jump to a far speech, an argument created two
+ * speeches over, a click.
  */
 
 export interface EditorState {
@@ -30,12 +30,14 @@ export interface EditorState {
    */
   count: number | null;
   /**
-   * The speech the sheet is pinned to, or null when the whole flow is shown.
+   * The middle of the focused window, or null when the whole flow is shown.
    *
    * Pinned rather than derived from the cursor: it stays put while you work
-   * across the focused speech and its two neighbours, and drops the moment the
-   * cursor leaves them. Focus that re-aimed itself on every move made the
-   * sheet slide around underneath you.
+   * across the focused speech and its two neighbours, and slides by one when
+   * the cursor crosses an edge (see `followFocus`). Focus that re-aimed itself
+   * on every move made the sheet slide around underneath you; focus that let
+   * go the moment you left the window barely survived a sentence. Only `f`
+   * turns it off.
    */
   focus: number | null;
   /**
@@ -53,8 +55,40 @@ export interface EditorState {
    * captured list of ids could as the flow changes underneath it.
    */
   selectAnchor: string | null;
+  /**
+   * What `y` took off the sheet, for `p` to put back, or null before anything
+   * has been copied. Several arguments when a selection was yanked, each with
+   * everything responding to it.
+   *
+   * Editor state rather than the document's, because a copy is yours: your
+   * partner flowing the same round has their own, and neither should find the
+   * other's under `p`. It outlives the sheet, though, where `openSheet` drops
+   * everything else — carrying an argument from one position to another is most
+   * of what this is for, and a copy that expired at the sheet boundary could
+   * never do it.
+   */
+  yanked: Copied[] | null;
   /** Whether the list of sheets is showing. */
   sidebar: boolean;
+  /**
+   * Whether the sheet area is showing what you have memorized (`M`) instead of
+   * the round.
+   *
+   * A flag rather than two apps, because what it swaps is only the *substrate*:
+   * both are a round of sheets, so the layout, the keymap and the cursor carry
+   * over whole and nothing downstream has to know which one it is looking at.
+   * See useMemoryRound.ts.
+   */
+  memory: boolean;
+  /**
+   * Whether the keymap is up on screen (`:?`).
+   *
+   * Editor state rather than something App holds, because it is the same kind
+   * of fact as `sidebar` — a way of looking at the sheet — and because the
+   * keymap has to know: while it is showing it owns the keyboard, so that a
+   * key pressed at a help screen can't land in a flow you can't see. See `run`.
+   */
+  help: boolean;
   /**
    * Where the cursor was on each sheet you've left, so coming back puts you
    * where you were rather than at the top.
@@ -84,7 +118,10 @@ export const initialEditorState: EditorState = {
   focus: null,
   command: null,
   selectAnchor: null,
+  yanked: null,
   sidebar: true,
+  memory: false,
+  help: false,
   cursors: {},
   zoom: 1,
 };
@@ -106,12 +143,30 @@ export interface SheetControls {
 }
 
 /**
+ * What the user has memorized, as the keymap is allowed to touch it: the
+ * answers to an argument, and putting a set of them there.
+ *
+ * Handed in for the same reason `SheetControls` is. Writing to `~/.flow` is not
+ * a state transition — it outlives the window, and outlives the round (see
+ * useMemory.ts).
+ */
+export interface MemoryControls {
+  answersTo: (argument: string, position: string) => { answers: string[] } | null;
+  keep: (position: string, argument: string, answers: string[]) => void;
+}
+
+/**
  * Leaving one sheet for another: remember where the cursor was on the sheet
  * being left, and put it back where it was on the one being opened.
  *
  * Everything else is dropped. A selection, a pending count, a pinned speech and
  * an open editor are all about the sheet you were reading, and carrying any of
  * them across would apply them to arguments they were never about.
+ *
+ * Everything except what was yanked, which is exactly the opposite: it is no
+ * longer about the sheet it came from — it is plain text, not a pointer into a
+ * flow (see `Copied`) — and crossing to another position is what a debater
+ * copies an argument *for*.
  */
 export function openSheet(
   state: EditorState,
@@ -140,6 +195,8 @@ export interface CommandContext {
   round: Round;
   /** The round this sheet belongs to, as a list to move around in. */
   sheets: SheetControls;
+  /** What the user has memorized: what `m` writes and what `A` reads. */
+  memory: MemoryControls;
   /**
    * The current layout. Only the motions need it — where an argument *sits* is
    * spatial. Anything that asks which speech an argument is in goes to the
@@ -153,23 +210,48 @@ export interface CommandContext {
 export type Command = (ctx: CommandContext) => EditorState;
 
 /**
- * Focus covers the pinned speech and the one either side. Take the cursor past
- * them and the sheet opens back up completely, rather than re-aiming at
- * wherever the cursor landed.
+ * Keep the focused window over the cursor: focus covers the pinned speech and
+ * the one either side, and taking the cursor past that edge slides the window
+ * along rather than throwing it away.
+ *
+ * It used to drop focus entirely, and that was the wrong end of the trade. The
+ * thing focus is *for* is the moment the sheet is too crowded to read — a full
+ * policy round in seven columns at 10px — which is exactly the moment you are
+ * still moving between speeches and answering across them. Unfocusing on the
+ * first `l` meant focus only survived while you stayed put, so the feature was
+ * available precisely when you didn't need it. `f` is the way out.
+ *
+ * The window moves by the least it can rather than re-centring on the cursor,
+ * and that distinction is the whole design: re-centring on every move made the
+ * sheet slide around underneath you, which is what the pin was introduced to
+ * stop. Moving *inside* the window doesn't move it at all; crossing the edge
+ * shifts it by one, so the cursor ends up at the edge it left by with a fresh
+ * column revealed ahead of it — a viewport scrolling, not a spotlight jumping.
+ *
+ * `focus` itself is never clamped to the round's ends — the shift is computed
+ * from the column the cursor is actually in, which is always a real speech,
+ * and a pin of 0 (the 1AC) is exactly as valid a pin as any other. What that
+ * pin draws as is a rendering question, not this function's: `focusRange` (see
+ * FlowSheet) slides the drawn window inward to keep it three columns wide even
+ * when the pin sits at an end, rather than truncating it to whichever half of
+ * the reach has somewhere to go.
  */
-export function releaseFocus(state: EditorState, flow: Flow): EditorState {
+export function followFocus(state: EditorState, flow: Flow): EditorState {
   if (state.focus === null) return state;
   // No cursor to judge by (it was just deleted, say): leave the pin alone.
   if (!state.cursorId || !flow.has(state.cursorId)) return state;
   const col = flow.speechOf(state.cursorId);
-  return Math.abs(col - state.focus) <= FOCUS_REACH
-    ? state
-    : { ...state, focus: null };
+  const drift = col - state.focus;
+  if (Math.abs(drift) <= FOCUS_REACH) return state;
+  return {
+    ...state,
+    focus: drift > 0 ? col - FOCUS_REACH : col + FOCUS_REACH,
+  };
 }
 
 /**
  * Whether `state`'s selection still makes sense, and drop it if not — the
- * same shape as `releaseFocus`, and for the same reason: a click, a jump to a
+ * same shape as `followFocus`, and for the same reason: a click, a jump to a
  * named speech, or `h`/`l` leaving the column can each strand an anchor
  * somewhere the cursor no longer ranges over. `selectionRange` already treats
  * "no shared column" and "the anchor's argument is gone" as the same
@@ -188,5 +270,5 @@ export function moveCursorTo(
   id: string,
   placed: Placed[],
 ): EditorState {
-  return releaseSelection(releaseFocus({ ...state, cursorId: id }, flow), placed);
+  return releaseSelection(followFocus({ ...state, cursorId: id }, flow), placed);
 }

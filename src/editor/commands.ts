@@ -1,8 +1,9 @@
 import { type Mark, type Speech } from "../model/types";
+import { type Anchor } from "../model/flow";
 import { moveCursor, moveToColumn, selectionRange, type Motion } from "../layout/navigate";
 import {
   openSheet,
-  releaseFocus,
+  followFocus,
   releaseSelection,
   type Command,
   type CommandContext,
@@ -66,7 +67,11 @@ export type SessionCommand =
   | { kind: "new"; title: string }
   | { kind: "rename"; title: string }
   | { kind: "sheet"; name: string }
-  | { kind: "delete" };
+  | { kind: "delete" }
+  /** Open a folder of sheets, in place of the round on screen. */
+  | { kind: "open" }
+  /** Write the round out — asking where, the first time. */
+  | { kind: "save" };
 
 /**
  * Read a session command, or null if the line says something else (a speech
@@ -112,6 +117,13 @@ export function parseSessionCommand(text: string): SessionCommand | null {
       return argument ? { kind: "sheet", name: argument } : null;
     case "delete":
       return { kind: "delete" };
+
+    // ---- the round on disk. A folder of sheets, opened and written whole —
+    // there is no "save this sheet", because a round is the unit you keep.
+    case "open":
+      return { kind: "open" };
+    case "save":
+      return { kind: "save" };
 
     default:
       return null;
@@ -165,9 +177,14 @@ export function resolveSpeech(text: string, speeches: Speech[]): number | null {
 export function submitCommand(ctx: CommandContext): EditorState {
   const { state, placed, speeches, flow } = ctx;
   const closed = { ...state, command: null };
+  // The keymap, on `:?`. Handled here rather than as a `SessionCommand` in App
+  // because it is exactly what a `Command` is — a pure transition from one
+  // editor state to the next — and nothing outside the editor happens.
+  const typed = (state.command ?? "").trim().toLowerCase();
+  if (typed === "?" || typed === "help") return { ...closed, help: true };
   const col = resolveSpeech(state.command ?? "", speeches);
   if (col === null) return closed;
-  return releaseFocus(
+  return followFocus(
     { ...closed, cursorId: moveToColumn(placed, state.cursorId, col) },
     flow,
   );
@@ -289,6 +306,122 @@ const cycleMark: Command = (ctx) => {
 };
 
 /**
+ * Say whether the argument was read off evidence or simply spoken — see
+ * `Support`.
+ *
+ * A toggle rather than a cycle because there are two states, and it reads off
+ * the cursor's own argument for the same reason `#` does: `c` means "away from
+ * what the cursor currently is", so a selection ends up uniform whichever end
+ * of it you pressed from. Which is the point of applying it to a run at all —
+ * a block is a block, and saying so once beats saying it six times.
+ */
+const toggleSupport: Command = (ctx) => {
+  const { state, flow } = ctx;
+  if (!state.cursorId || !flow.has(state.cursorId)) return state;
+  const next = flow.supportOf(state.cursorId) === "card" ? "analytic" : "card";
+  flow.setSupports(selectedIds(ctx), next);
+  return { ...state, count: null };
+};
+
+/**
+ * Memorize the answers to the cursor's argument — every response already
+ * written under it, in order, kept in `~/.flow` against the argument itself
+ * (see memory/store.ts). `A` puts them back the next time it comes up.
+ *
+ * What is memorized is what is on the sheet, not something typed into a
+ * separate list: you have just flowed the four answers to neg flex, they are
+ * sitting under it in the 2AC column, and the whole gesture is one key that
+ * says "these — keep them". A block file you have to maintain somewhere else
+ * is a block file that goes stale, and this cannot: the sheet is the only
+ * place it can come from.
+ *
+ * Which means the same key also revises and forgets, without being a mode or a
+ * toggle. `m` makes the store agree with the sheet, whatever it currently says
+ * — drop an answer you have stopped making and press it again and the block is
+ * the three that are left; `x` the answers entirely and press it and the block
+ * is gone.
+ *
+ * The cursor's argument only, not the selection: a block belongs to the one
+ * argument it answers, and there is no single argument a range of them is the
+ * answers to.
+ */
+const memorize: Command = ({ state, flow, memory, sheets }) => {
+  if (state.memory) return state; // already looking at the store
+  if (!state.cursorId || !flow.has(state.cursorId)) return state;
+  const answers = flow.childrenOf(state.cursorId).map((id) => flow.textOf(id));
+  memory.keep(positionOf(sheets), flow.textOf(state.cursorId), answers);
+  return { ...state, count: null };
+};
+
+/**
+ * The position a block memorized here belongs to: the name of the sheet it is
+ * being flowed on. Free — you have already named the sheet "Assurance DA", and
+ * a block is only ever memorized while you are standing on one.
+ */
+function positionOf({ list, active }: CommandContext["sheets"]): string {
+  return list.find((sheet) => sheet.id === active)?.title ?? "";
+}
+
+/**
+ * Show what you have memorized, or go back to the round.
+ *
+ * Not an overlay and not a sheet in the round: the same window, laid out the
+ * same way, with a different document under it — your positions down the side
+ * and the blocks in each as a two-column flow. Which is why there is no keymap
+ * for it. A block is an argument with answers under it, so `i`, `a`, `o`, `x`,
+ * `#`, `J`/`K` and `u` already mean the right things, and what they edit is
+ * written back to `~/.flow` as you go (see useMemoryRound.ts).
+ *
+ * The cursor is put down rather than carried across — the two documents share
+ * no arguments — and picked back up on the way home, the same way leaving a
+ * sheet and coming back to it does.
+ */
+const toggleMemory: Command = ({ state, sheets }) => ({
+  ...state,
+  memory: !state.memory,
+  cursors: sheets.active
+    ? { ...state.cursors, [sheets.active]: state.cursorId }
+    : state.cursors,
+  cursorId: null,
+  editingId: null,
+  count: null,
+  selectAnchor: null,
+  focus: null,
+});
+
+/**
+ * Insert the memorized answers to the cursor's argument, as responses in the
+ * next speech — `4A` for a speech further out, the same way `a` takes a count.
+ *
+ * `a` and `A` are the same gesture at two speeds: one empty answer to write
+ * yourself, or every answer you already know you make. Which is why this lands
+ * the cursor on the first of them and does *not* open the editor — the text is
+ * already there, and what you do next is read down the block and add the one
+ * thing this round called for.
+ *
+ * One commit for the lot, so the block is one undo rather than four.
+ */
+const recall: Command = (ctx) => {
+  const { state, flow, speeches, memory, sheets } = ctx;
+  if (!state.cursorId || !flow.has(state.cursorId)) return state;
+  const block = memory.answersTo(flow.textOf(state.cursorId), positionOf(sheets));
+  if (!block || block.answers.length === 0) return state;
+
+  const speech = counted(ctx) ?? flow.speechOf(state.cursorId) + 1;
+  if (speech >= speeches.length) return state; // nothing past the last speech
+
+  const parent = state.cursorId;
+  let first: string | null = null;
+  flow.batch(() => {
+    for (const answer of block.answers) {
+      const id = flow.addResponse(parent, answer, speech);
+      first ??= id;
+    }
+  });
+  return { ...state, cursorId: first ?? state.cursorId, count: null };
+};
+
+/**
  * Enter or leave visual selection: `v` anchors it at the cursor; `v` again
  * (or anything that isn't a selection-aware key — see `SELECTION_KEYS`) drops
  * it. With no cursor there is nothing to anchor to.
@@ -299,16 +432,125 @@ const toggleSelect: Command = ({ state }) => {
 };
 
 /**
+ * The selection with anything already inside it dropped — the arguments a copy
+ * should actually be taken of.
+ *
+ * A selection ranges over a *column*, and an argument's responses are usually
+ * in the next one, so this is normally the selection unchanged. Usually, not
+ * always: `4a` can answer an argument in its own speech, and then a parent and
+ * its child can both be selected. Copying an argument copies what responds to
+ * it, so taking both would put the child in twice.
+ */
+function outermost({ flow }: CommandContext, ids: string[]): string[] {
+  const selected = new Set(ids);
+  return ids.filter((id) => {
+    for (let at = flow.parentOf(id); at; at = flow.parentOf(at)) {
+      if (selected.has(at)) return false;
+    }
+    return true;
+  });
+}
+
+/**
+ * Copy the selection — each argument and everything responding to it — for `p`
+ * to put back.
+ *
+ * The unit is the argument *and its subtree*, the same unit `x` deletes, and
+ * for the same reason: on a flow an argument is not a line, it is a line and
+ * the exchange hanging off it. Copying "1. perm do both" without the two
+ * answers under it would be copying half of what is on the sheet there. A leaf
+ * is its own subtree, so the narrow case costs nothing.
+ *
+ * Nothing is written to the document — this is the one command that touches the
+ * flow and leaves it exactly as it was.
+ */
+const yank: Command = (ctx) => {
+  const { state, flow } = ctx;
+  const ids = outermost(ctx, selectedIds(ctx)).filter((id) => flow.has(id));
+  if (ids.length === 0) return state;
+  return { ...state, yanked: ids.map((id) => flow.copy(id)), count: null };
+};
+
+/**
+ * Put the copy back: below the cursor's argument, or above it for `P` — the
+ * same two directions, and the same pair of keys, that `o` and `O` already
+ * mean. A count names the speech, as it does everywhere else: `3p` puts the
+ * copy in the 3rd speech rather than the cursor's own.
+ *
+ * A sibling rather than a response, because "put this here" is a statement
+ * about where on the sheet it goes, not about what it answers — `p` next to an
+ * argument gives you an argument next to it. Answering is `a`, and the two
+ * compose: `a` an empty response and `p` into it.
+ *
+ * With no cursor — an empty sheet, which is the whole point of `:new` then `p`
+ * — it goes in as a fresh argument tree at the end of the flow, the way `n`
+ * does, and in the speech it was copied *from*: an argument made in the 1NC
+ * belongs in the 1NC of whatever position you file it under, and there is no
+ * cursor to say otherwise.
+ *
+ * One commit for the lot, so a copy of four arguments is one undo. The cursor
+ * lands on the first of them and the editor stays shut: the text is already
+ * there, and what you do next is read it, not type it.
+ *
+ * A copy put down late enough in the round that its responses have no speech
+ * left to go in arrives without them — see `Flow.paste`, which is also what
+ * makes a seven-column exchange land readably on the two-column memory sheet.
+ */
+const put =
+  (where: "after" | "before"): Command =>
+  (ctx) => {
+    const { state, flow, speeches } = ctx;
+    const yanked = state.yanked;
+    if (!yanked || yanked.length === 0) return state;
+
+    const on = state.cursorId && flow.has(state.cursorId) ? state.cursorId : null;
+    const last = speeches.length - 1;
+    // Clamped for the one default that can name a column this sheet hasn't
+    // got: the copy's own, which was a column on the sheet it came off. A
+    // count is already checked against the speeches (see `counted`), and the
+    // cursor is by definition standing in one.
+    const wanted = counted(ctx) ?? (on ? flow.speechOf(on) : yanked[0].speech);
+    const speech = Math.min(wanted, last);
+    let anchor: Anchor = on
+      ? where === "after"
+        ? { after: on }
+        : { before: on }
+      : { root: null, before: where === "before" };
+
+    let first: string | null = null;
+    flow.batch(() => {
+      for (const copied of yanked) {
+        const id = flow.paste(anchor, copied, speech, last);
+        first ??= id;
+        // The rest chain off the one before, so several copied arguments keep
+        // their order. Anchoring each of them at the cursor instead would put
+        // them back in reverse.
+        anchor = { after: id };
+      }
+    });
+    return { ...state, cursorId: first ?? state.cursorId, count: null };
+  };
+
+/**
  * Delete every selected argument, and everything responding to each — one
  * commit, so a multi-argument `x` is one undo step. Lands on the parent of
  * the first selected argument, the same rule single-argument delete already
  * used.
+ *
+ * What was deleted is kept, exactly as `y` would have kept it, so `x` … `p` is
+ * how an argument *moves* — including onto another sheet, which nothing else
+ * can do: a flow's structural moves (`J`/`K`) only reorder siblings, and there
+ * is no gesture for "this belongs on the counterplan, not the case". It is also
+ * what vim does with its unnamed register, and the cost is the same one vim
+ * has: an `x` between a copy and its `p` replaces the copy.
  */
 const remove: Command = (ctx) => {
   const { state, flow } = ctx;
   if (!state.cursorId) return state;
   const ids = selectedIds(ctx);
   const parent = flow.parentOf(ids[0]);
+  // Before the deletion, plainly: there is nothing to read afterwards.
+  const yanked = outermost(ctx, ids).map((id) => flow.copy(id));
   flow.batch(() => {
     for (const id of ids) {
       // A selected descendant of another selected argument is already gone by
@@ -317,7 +559,14 @@ const remove: Command = (ctx) => {
       if (flow.has(id)) flow.remove(id);
     }
   });
-  return { ...state, cursorId: parent, editingId: null, count: null, selectAnchor: null };
+  return {
+    ...state,
+    yanked,
+    cursorId: parent,
+    editingId: null,
+    count: null,
+    selectAnchor: null,
+  };
 };
 
 /**
@@ -475,9 +724,11 @@ const shiftSheet =
   };
 
 /**
- * Show or hide the list of sheets. On its own key because a one-sheet round —
- * a practice speech, a rebuttal drill — has nothing to list, and the width is
- * better spent on the flow.
+ * Show or hide the list of sheets. On the platform chord, not a bare key — a
+ * one-sheet round (a practice speech, a rebuttal drill) has nothing to list
+ * and the width is better spent on the flow, but that's a rare enough reach
+ * that it doesn't need a letter of its own, and Cmd+B is where every other
+ * editor already keeps it.
  */
 const toggleSidebar: Command = ({ state }) => ({ ...state, sidebar: !state.sidebar });
 
@@ -525,12 +776,18 @@ export const commands: Record<string, Command> = {
   i: edit,
   Enter: edit,
   a: respond, // answer — a child, next speech column
+  A: recall, // …or every answer you have memorized to it, as a block
+  m: memorize, // memorize the answers under the cursor, as the block for it
+  M: toggleMemory, // …and everything you have memorized, as a flow of its own
   o: sibling("after"), // another argument below…
   O: sibling("before"), // …and above
   n: newRoot("after"), // a new argument tree, clear of this one
   N: newRoot("before"), // …above it: the overview case
   f: toggleFocus, // narrow the speeches you aren't in
-  v: toggleSelect, // select a run in this column — # / x / J / K act on it
+  v: toggleSelect, // select a run in this column — # / x / y / J / K act on it
+  y: yank, // copy it and everything answering it…
+  p: put("after"), // …and put it back below the cursor, or `3p` in the 3rd speech
+  P: put("before"), // …above it
   // The round's other sheets. Brackets because they are the pair vim already
   // uses for "the next one of these, the previous one", and because the keys
   // that make arguments are all letters — reaching for a bracket is never half
@@ -539,8 +796,9 @@ export const commands: Record<string, Command> = {
   "[": goToSheet(-1),
   "}": shiftSheet(1), // and shifted, the sheet itself moves
   "{": shiftSheet(-1),
-  b: toggleSidebar, // the list of sheets
+  "M-b": toggleSidebar, // the list of sheets — Cmd+B, same chord every editor uses for this
   "#": cycleMark, // how the selection is marked off: 1. / a. / nothing
+  c: toggleSupport, // was it a card, or did they just say it
   J: moveSelection("down"), // shift the selection past its next sibling…
   K: moveSelection("up"), // …or its previous one
   // Zoom, on the platform chord — this is a desktop app, and Cmd +/- is where
@@ -575,8 +833,13 @@ const isDigit = (key: string) => key.length === 1 && key >= "0" && key <= "9";
  * `h`/`l` usually end up dropping the selection anyway (`releaseSelection`
  * catches that once they've actually left the column) — while they haven't,
  * mid-selection movement has to be allowed to run at all.
+ *
+ * `y` is deliberately *not* here even though it reads the selection: `run`
+ * calls the command before clearing the anchor, so the copy is taken correctly
+ * either way, and dropping the selection afterwards is what vim does — the
+ * selection was there to say what to copy, and it has said it.
  */
-const SELECTION_KEYS = new Set(["h", "j", "k", "l", "v", "#", "x", "J", "K"]);
+const SELECTION_KEYS = new Set(["h", "j", "k", "l", "v", "#", "c", "x", "J", "K"]);
 
 /**
  * Run whatever `key` is bound to. Returns null when nothing is — the caller
@@ -591,11 +854,22 @@ const SELECTION_KEYS = new Set(["h", "j", "k", "l", "v", "#", "x", "J", "K"]);
  * a selection some earlier `v` left lying around.
  */
 export function run(key: string, ctx: CommandContext): EditorState | null {
+  // The keymap on screen owns the keyboard. Every key is swallowed rather than
+  // run, so that reaching for something while reading the help sheet can't
+  // quietly answer an argument on the flow behind it — and `Escape`, or the
+  // `?` that opened it, puts it away.
+  //
+  // Non-null for every key, unlike the fall-through below, which is what makes
+  // the caller call `preventDefault` and actually swallow them.
+  if (ctx.state.help) {
+    const closes = key === "Escape" || key === "?" || key === "Enter";
+    return closes ? { ...ctx.state, help: false } : ctx.state;
+  }
   const command = commands[key];
   if (!command) return null;
   const next = command(ctx);
   const spent = isDigit(key) ? next : { ...next, count: null };
   const kept =
     isDigit(key) || SELECTION_KEYS.has(key) ? spent : { ...spent, selectAnchor: null };
-  return releaseSelection(releaseFocus(kept, ctx.flow), ctx.placed);
+  return releaseSelection(followFocus(kept, ctx.flow), ctx.placed);
 }

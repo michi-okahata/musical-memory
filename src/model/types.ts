@@ -15,7 +15,42 @@ export interface Argument {
   text: string;
   /** How it is marked off from its neighbours. See `Mark`. */
   mark: Mark;
+  /** Whether it was read off evidence or spoken. See `Support`. */
+  support: Support;
   children: Argument[];
+}
+
+/**
+ * An argument lifted off the sheet, with everything responding to it — what
+ * `y` keeps and `p` puts back (see `Flow.copy` and the keymap).
+ *
+ * Plain data rather than ids, because the arguments a copy was taken from can
+ * be deleted, rewritten, or on a sheet you have since closed, and a copy has to
+ * outlive all three. No id of its own for the same reason: what `p` writes is a
+ * new argument every time, not a second appearance of an old one.
+ */
+export interface Copied {
+  text: string;
+  mark: Mark;
+  support: Support;
+  /**
+   * The column it was taken from.
+   *
+   * Where a copy *lands* is decided when it is put down rather than when it is
+   * taken, so this is not where it goes — `p` shifts the whole copy by the
+   * distance from its top to the destination, and every argument in it keeps
+   * its place relative to the rest. An exchange copied out of the 1AC becomes,
+   * in the 2AC, an argument with its answers a speech later and the answers to
+   * those a speech after that: the same shape, moved.
+   *
+   * It is still worth recording, because it is the only sensible default when
+   * nothing else names a column — `p` onto a sheet with no cursor on it, which
+   * is exactly the "file this argument under that position" gesture. An
+   * argument made in the 1NC belongs in the 1NC of wherever it is filed, not at
+   * the front of the round.
+   */
+  speech: number;
+  children: Copied[];
 }
 
 /**
@@ -33,6 +68,45 @@ export type Mark = "num" | "alpha" | "none";
 
 /** What an argument is marked with when nothing nearby suggests otherwise. */
 export const DEFAULT_MARK: Mark = "num";
+
+/**
+ * Whether an argument was read off evidence or simply spoken: a *card* is a
+ * quoted source, an *analytic* is the debater's own reasoning.
+ *
+ * The one distinction on a flow that isn't about structure, and it is here
+ * because rebuttals turn on it — "they have no cards on this" is an argument,
+ * and a dropped card is a different problem from a dropped analytic. Scanning a
+ * column for which of its points are actually carded is a thing debaters do
+ * with a pen, and it is the only reading of the sheet the shorthand itself
+ * can't answer.
+ *
+ * Note this is a *flag*, not evidence: the card's text never comes onto a flow.
+ * The sheet holds shorthand, and what marking one as a card buys you is the
+ * glance, not the quotation.
+ *
+ * Orthogonal to `Mark` on purpose — an argument can be the second point in a
+ * numbered run *and* be carded, and the two facts have nothing to say to each
+ * other. Kept as its own field for the same reason `Mark` is per-argument: the
+ * 1NC alternates cards and analytics freely, and there is no group to hang it
+ * on.
+ *
+ * The word is available again, incidentally. "Card" used to mean the box on the
+ * sheet and was renamed to `Argument` throughout, which is what frees it to
+ * mean here what it means in a debate round.
+ */
+export type Support = "card" | "analytic";
+
+/**
+ * What an argument counts as when nothing nearby suggests otherwise.
+ *
+ * `card`, so that a sheet nobody has pressed `c` on looks exactly as it always
+ * did — the distinction is opt-in, and a debater who never reaches for it is
+ * never shown a sheet full of marks about a question they aren't asking. New
+ * arguments inherit from their same-speech neighbour anyway (see
+ * `neighborSupport`), so in practice this decides only the first argument in a
+ * column and the rest follow whatever you said about that one.
+ */
+export const DEFAULT_SUPPORT: Support = "card";
 
 /** An argument's slot in the grid: which column, which row, how many rows tall. */
 export interface Placed {
@@ -53,10 +127,15 @@ export interface Placed {
 }
 
 /**
- * How far either side of the focused speech stays expanded: the speech before
- * it and the one after. Shared vocabulary because two places must agree on it
- * — the view decides which columns to collapse, and the keymap decides when
- * the cursor has left the focused region and focus should drop.
+ * How far either side of the pinned speech stays on screen: the speech before
+ * it and the one after, so `f` shows three columns.
+ *
+ * Shared vocabulary because two places must agree on it, and they use it
+ * differently. The view turns it into the columns actually drawn (`focusRange`
+ * in FlowSheet, which slides the window inward at the ends of the round so a
+ * pin on the 1AC still gets three). The keymap uses it to decide when the
+ * cursor has left that window, and slides the pin by one to follow rather than
+ * dropping it (`followFocus` in editor/state.ts).
  */
 export const FOCUS_REACH = 1;
 

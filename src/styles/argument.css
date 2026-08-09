@@ -28,11 +28,16 @@
   background: var(--argument-hover);
 }
 
-/* The cursor: the left rule going accent-coloured, a wash across the
-   argument, and a hairline around it. Three quiet signals rather than one
-   loud one — the wash is what you find from across the sheet, the rule is
-   what tells you the exact argument, and none of them changes the argument's
+/* The cursor: the left rule going to full ink, a wash across the argument, and
+   a hairline around it. Three quiet signals rather than one loud one — the
+   wash is what you find from across the sheet, the rule and the hairline are
+   what tell you the exact argument, and none of them changes the argument's
    size, so moving the cursor doesn't move the flow.
+
+   All three are tone, because the palette has no hue to spend (see tokens.css).
+   That is why there are three: a coloured cursor could have got away with one
+   signal, and a monochrome one earns the same certainty by saying the same
+   thing in three registers — area, line weight, and edge.
    Worn by the cell, not the argument, so the number is inside the highlight —
    it is part of the argument now — and so the three layers of the editor,
    which all carry the argument's class, can't each stack another copy of the
