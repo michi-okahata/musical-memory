@@ -32,4 +32,7 @@ futures-util = "0.3.33"
 local-ip-address = "0.6.13"
 tokio = { version = "1.53.1", features = ["rt-multi-thread", "net", "sync", "time", "macros"] }
 base64 = "0.23.1"
+# A `.cmir` is a gzip-wrapped envelope — see `cmir.rs`. Pure Rust, so nothing
+# about reading one depends on which zlib the machine happens to have.
+flate2 = "1"
 

@@ -69,6 +69,8 @@ const GROUPS: Group[] = [
     title: "the sheet",
     keys: [
       ["M", "what you have memorized, as a sheet"],
+      [":import", "read a folder of cut cards in as blocks"],
+      [":forget", "drop what an import put there"],
       ["⌘B", "show or hide the list of sheets"],
       ["⌘+ ⌘-", "zoom"],
       ["⌘0", "back to actual size"],

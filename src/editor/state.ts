@@ -143,15 +143,16 @@ export interface SheetControls {
 }
 
 /**
- * What the user has memorized, as the keymap is allowed to touch it: the
- * answers to an argument, and putting a set of them there.
+ * What the user has to hand, as the keymap is allowed to touch it: what answers
+ * an argument, and putting a set of answers there.
  *
- * Handed in for the same reason `SheetControls` is. Writing to `~/.flow` is not
- * a state transition — it outlives the window, and outlives the round (see
- * useMemory.ts).
+ * Narrower than `Memory`: a command looks up one argument and writes one block,
+ * which is everything the keys do. Reading a folder in is `:import`, which App
+ * runs. Handed in for the same reason `SheetControls` is — writing to `~/.flow`
+ * is not a state transition (see useMemory.ts).
  */
 export interface MemoryControls {
-  answersTo: (argument: string, position: string) => { answers: string[] } | null;
+  recall: (argument: string, position: string) => { block: { answers: string[] } | null };
   keep: (position: string, argument: string, answers: string[]) => void;
 }
 
@@ -159,14 +160,10 @@ export interface MemoryControls {
  * Leaving one sheet for another: remember where the cursor was on the sheet
  * being left, and put it back where it was on the one being opened.
  *
- * Everything else is dropped. A selection, a pending count, a pinned speech and
- * an open editor are all about the sheet you were reading, and carrying any of
- * them across would apply them to arguments they were never about.
- *
- * Everything except what was yanked, which is exactly the opposite: it is no
- * longer about the sheet it came from — it is plain text, not a pointer into a
- * flow (see `Copied`) — and crossing to another position is what a debater
- * copies an argument *for*.
+ * Everything else is dropped: a selection, a count, a pinned speech and an open
+ * editor are all about the sheet you were reading. Except what was yanked,
+ * which is plain text rather than a pointer into a flow (see `Copied`) —
+ * crossing to another position is what a debater copies an argument *for*.
  */
 export function openSheet(
   state: EditorState,
@@ -214,27 +211,15 @@ export type Command = (ctx: CommandContext) => EditorState;
  * the one either side, and taking the cursor past that edge slides the window
  * along rather than throwing it away.
  *
- * It used to drop focus entirely, and that was the wrong end of the trade. The
- * thing focus is *for* is the moment the sheet is too crowded to read — a full
- * policy round in seven columns at 10px — which is exactly the moment you are
- * still moving between speeches and answering across them. Unfocusing on the
- * first `l` meant focus only survived while you stayed put, so the feature was
- * available precisely when you didn't need it. `f` is the way out.
+ * The window moves by the least it can rather than re-centring, which is the
+ * whole design: re-centring made the sheet slide around underneath you, which
+ * is what the pin was introduced to stop. Moving inside the window doesn't move
+ * it; crossing the edge shifts it by one — a viewport scrolling, not a
+ * spotlight jumping. `f` is the way out.
  *
- * The window moves by the least it can rather than re-centring on the cursor,
- * and that distinction is the whole design: re-centring on every move made the
- * sheet slide around underneath you, which is what the pin was introduced to
- * stop. Moving *inside* the window doesn't move it at all; crossing the edge
- * shifts it by one, so the cursor ends up at the edge it left by with a fresh
- * column revealed ahead of it — a viewport scrolling, not a spotlight jumping.
- *
- * `focus` itself is never clamped to the round's ends — the shift is computed
- * from the column the cursor is actually in, which is always a real speech,
- * and a pin of 0 (the 1AC) is exactly as valid a pin as any other. What that
- * pin draws as is a rendering question, not this function's: `focusRange` (see
- * FlowSheet) slides the drawn window inward to keep it three columns wide even
- * when the pin sits at an end, rather than truncating it to whichever half of
- * the reach has somewhere to go.
+ * `focus` is never clamped to the round's ends, since the shift comes from the
+ * column the cursor is actually in and a pin of 0 is as valid as any other.
+ * What it draws as is `focusRange`'s (see FlowSheet).
  */
 export function followFocus(state: EditorState, flow: Flow): EditorState {
   if (state.focus === null) return state;

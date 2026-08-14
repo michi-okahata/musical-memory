@@ -15,20 +15,15 @@ import type { Memory } from "./useMemory";
 /**
  * The memory sheet: `~/.flow` as a round you can flow on.
  *
- * Built when `M` is pressed and thrown away when it is pressed again, because
- * the store is the copy of record and this is a working copy of it. What comes
- * back is the same five things `useSession` hands App for the real round — a
- * round, a flow, its roots, the sheets, which one is open — so that everything
- * downstream is looking at *a* round and never has to ask which.
- *
- * Written back as it changes, on the same terms as `useLibrary` writes a round
- * to disk: a debater editing a block under a speech timer should no more have
- * to remember to save it than one taking the flow down should.
+ * Built when `M` is pressed and thrown away when it is pressed again. It hands
+ * back the same five things `useSession` does for the real round, so everything
+ * downstream is looking at *a* round and never has to ask which, and it is
+ * written back as it changes the way `useLibrary` writes a round to disk.
  *
  * The one rule that makes this safe: while the sheet is open it is the source
- * of truth, and the store follows it. Nothing rebuilds the round from
- * `~/.flow` behind the user's back — a rebuild mid-edit would take the cursor,
- * the undo history and possibly a half-typed argument with it.
+ * of truth and the store follows it. Nothing rebuilds the round behind the
+ * user's back — a rebuild mid-edit would take the cursor, the undo history and
+ * a half-typed argument with it.
  */
 
 /** How long after the last change the store is written. As `useLibrary`. */
@@ -64,8 +59,15 @@ export function useMemoryRound(
   roundRef.current = round;
   // The blocks as of the moment the sheet is opened. A ref, so that the store
   // loading or `m` firing does not rebuild a sheet that is being edited.
-  const blocksRef = useRef(memory.blocks);
-  blocksRef.current = memory.blocks;
+  //
+  // The user's own blocks and no others. What is on this sheet is what the
+  // store is made to say (see `writesFor`), which means a block that is in
+  // `~/.flow` and not here is one this hook deletes — so a folder of imported
+  // blocks put on it would be a folder of imported blocks deleted the moment
+  // anything was edited. They are not the user's to edit here and they are
+  // read again from the files whenever they change.
+  const blocksRef = useRef(memory.memorized);
+  blocksRef.current = memory.memorized;
   const refresh = memory.refresh;
   const report = memory.report;
 

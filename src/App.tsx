@@ -149,13 +149,19 @@ function App() {
   // Rebuilt as the flow changes, so completions pick up the round's own
   // vocabulary as it's written. Memorized answers feed it too: they are words
   // this flower has already used, on a sheet that hasn't seen them yet.
+  //
+  // Memorized ones only, and not the imported ones — which is both halves of
+  // what "already used" means. A backfile is somebody's cut cards rather than
+  // your shorthand, so its words are not the ones to finish yours with; and
+  // this is rebuilt on every keystroke, which a folder of files is far too much
+  // to walk for.
   const dictionary = useMemo(
     () =>
       buildDictionary(
         textsOf(roots),
-        wordsIn(memory.blocks.flatMap((block) => block.answers)),
+        wordsIn(memory.memorized.flatMap((block) => block.answers)),
       ),
-    [roots, memory.blocks],
+    [roots, memory.memorized],
   );
 
   // How the cursor's own argument is marked, for the status line — but only
@@ -183,16 +189,17 @@ function App() {
     [roots, cursorId, flow],
   );
 
-  // How many answers are memorized to the cursor's own argument, for the
-  // status line — which is the only warning that `A` is about to put four
-  // arguments on the sheet. Keyed on `roots` like `mark` above, and for the
-  // same reason: it reads the document, and `roots` changing is the tick the
+  // What there is to recall against the cursor's own argument, for the status
+  // line — which is the only warning that `A` is about to put four arguments on
+  // the sheet, and the only sign that several imported files answer it and so
+  // none of them will. Keyed on `roots` like `mark` above, and for the same
+  // reason: it reads the document, and `roots` changing is the tick the
   // document changed on.
-  const answers = useMemo(
+  const recalled = useMemo(
     () =>
       !editor.memory && cursorId && flow?.has(cursorId)
-        ? (memory.answersTo(flow.textOf(cursorId), position)?.answers.length ?? 0)
-        : 0,
+        ? memory.recall(flow.textOf(cursorId), position)
+        : { block: null, among: 0 },
     [roots, cursorId, flow, memory, editor.memory, position],
   );
 
@@ -390,6 +397,12 @@ function App() {
       case "save":
         library.save();
         break;
+      case "import":
+        memory.importFrom();
+        break;
+      case "forget":
+        memory.forget();
+        break;
     }
   }, [actions, flow, placed, sheets, activeSheet, open, sheetControls, library, memory, sheetActions, speeches]);
 
@@ -473,9 +486,11 @@ function App() {
         error={error}
         savedIn={library.directory}
         saveError={library.error}
-        answers={answers}
+        answers={recalled.block?.answers.length ?? 0}
+        among={recalled.among}
         memory={editor.memory}
         memoryError={memory.error}
+        memoryNote={memory.note}
         authorLabel={authorLabel}
         // Every one of these takes the *latest* state rather than the `editor`
         // this render closed over — see CommandLine.tsx. Hence also the

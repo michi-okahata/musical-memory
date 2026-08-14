@@ -1,40 +1,58 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { canRemember, memorize, readBlocks, type Block } from "../memory/store";
-import { argumentKey, blockFor } from "../memory/recall";
+import {
+  canRemember,
+  forgetImports,
+  importInto,
+  memorize,
+  readImported,
+  readMemorized,
+  type Block,
+} from "../memory/store";
+import { argumentKey, indexOf, recall as recallIn, type Recall } from "../memory/recall";
+import { countOf, filesIn, scan } from "../memory/cmir";
+import { pickDirectory } from "../files/disk";
 
 /**
- * The blocks the user has memorized, held in memory for the length of a session
+ * The blocks the user has to hand, held in memory for the length of a session
  * and written through to `~/.flow` as they change.
  *
  * Read once, at launch. Every cursor movement asks this whether the argument it
- * landed on is one there are answers for — that is what the status line says
- * and what `A` acts on — and nothing about moving the cursor should reach the
- * disk. So the store is the copy of record and this is the copy that is *used*,
- * with writes going to both.
+ * landed on is one there are answers for, and nothing about moving the cursor
+ * should reach the disk — so the store is the copy of record and this is the
+ * copy that is used, with writes going to both.
  *
- * A hook rather than a store like `FlowSession`, on the same terms as
- * `useLibrary`: there is no socket and no clock here, only a list that changes
- * when a key is pressed.
+ * Two pieces of state rather than one list filtered two ways: the memorized half
+ * is re-read every time the memory sheet writes, and the imported half is a
+ * whole backfile that changes only when somebody asks for a folder. Together,
+ * the second would be paid for every time the first moved — and a read of one
+ * could land on top of a write to the other.
  */
 
 export interface Memory {
-  /** Everything memorized, in every position. */
-  blocks: Block[];
+  /** The ones you memorized — what the memory sheet shows and writes back. */
+  memorized: Block[];
   /**
-   * The block answering this argument in this position, or null. The position
-   * is a preference and not a filter — see `blockFor`.
+   * What answers this argument in this position — see `recall`. The position is
+   * a preference and not a filter.
    */
-  answersTo: (argument: string, position: string) => Block | null;
+  recall: (argument: string, position: string) => Recall;
   /**
    * Memorize these answers to this argument, replacing whatever was there. No
-   * answers forgets it.
+   * answers forgets it. Always one of your own blocks: a file's are not
+   * something `m` can write and not something it can delete.
    */
   keep: (position: string, argument: string, answers: string[]) => void;
   /**
-   * Read `~/.flow` again. Called when the memory sheet has been editing the
-   * store behind this list's back (see useMemoryRound.ts) — that hook writes
-   * whole positions at a time, and this is how what it wrote gets back to the
-   * one line `A` will insert.
+   * Read a folder of CardMirror files and file every block in it. Asks where.
+   * Replaces whatever was read out of that folder last time.
+   */
+  importFrom: () => void;
+  /** Drop every imported block. What you memorized stays. */
+  forget: () => void;
+  /**
+   * Read the memorized half of `~/.flow` again, after the memory sheet has been
+   * editing the store behind this list's back (see useMemoryRound.ts). Only
+   * that half: nothing there touches the imported one.
    */
   refresh: () => void;
   /** Report a failure from something else writing to the store — see `flush`. */
@@ -46,24 +64,36 @@ export interface Memory {
    * `useLibrary` answers `:save`.
    */
   error: string | null;
+  /**
+   * What last worked and was worth saying: how much an import read in, what a
+   * `:forget` dropped. Separate from `error` because the status line draws that
+   * one as a failure.
+   */
+  note: string | null;
 }
 
 export function useMemory(): Memory {
-  const [blocks, setBlocks] = useState<Block[]>([]);
+  const [memorized, setMemorized] = useState<Block[]>([]);
+  const [imported, setImported] = useState<Block[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
     if (!canRemember()) return;
-    readBlocks().then(setBlocks, (reason) => setError(String(reason)));
+    readMemorized().then(setMemorized, (reason) => setError(String(reason)));
   }, []);
 
   useEffect(() => {
     if (!canRemember()) return;
-    // Dropped if the component goes before the read lands — this runs twice
+    // Dropped if the component goes before the reads land — this runs twice
     // under StrictMode, and the throwaway pass must not set state.
     let live = true;
-    readBlocks().then(
-      (read) => live && setBlocks(read),
+    Promise.all([readMemorized(), readImported()]).then(
+      ([mine, theirs]) => {
+        if (!live) return;
+        setMemorized(mine);
+        setImported(theirs);
+      },
       (reason) => live && setError(String(reason)),
     );
     return () => {
@@ -74,8 +104,10 @@ export function useMemory(): Memory {
   // Read at call time rather than closed over, so that `keep` doesn't have to
   // be rebuilt — and the keymap resubscribed — every time a block changes. Same
   // reason `useLibrary` holds the round in a ref.
-  const blocksRef = useRef(blocks);
-  blocksRef.current = blocks;
+  const mineRef = useRef(memorized);
+  mineRef.current = memorized;
+  const theirsRef = useRef(imported);
+  theirsRef.current = imported;
 
   const keep = useCallback((position: string, argument: string, answers: string[]) => {
     const key = argumentKey(argument);
@@ -92,25 +124,73 @@ export function useMemory(): Memory {
     // Applied here first and written after: `m` is pressed mid-speech and the
     // status line has to answer immediately. A failed write puts the list back
     // rather than leaving the screen claiming something the disk doesn't say.
-    const before = blocksRef.current;
-    setBlocks((prev) => {
+    const before = mineRef.current;
+    setMemorized((prev) => {
       const rest = prev.filter((block) => !(block.key === key && block.position === at));
       return lines.length === 0
         ? rest
-        : [...rest, { position: at, key, argument: argument.trim(), answers: lines }];
+        : [...rest, { source: "", position: at, key, argument: argument.trim(), answers: lines }];
     });
     memorize(at, key, argument.trim(), lines).then(
       () => setError(null),
       (reason) => {
-        setBlocks(before);
+        setMemorized(before);
         setError(String(reason));
       },
     );
   }, []);
 
-  const answersTo = useCallback(
-    (argument: string, position: string) => blockFor(argument, blocks, position),
-    [blocks],
+  /**
+   * Read a folder in. Not optimistic the way `keep` is — this is a deliberate
+   * act with a dialog in front of it, so it goes to the disk and comes back
+   * with what happened. Only the imported half is re-read, so a `m` pressed
+   * while the dialog was open isn't thrown away.
+   */
+  const importFrom = useCallback(async () => {
+    if (!canRemember()) {
+      setError("importing needs the desktop app");
+      return;
+    }
+    try {
+      const picked = await pickDirectory();
+      if (!picked) return;
+      // The folder as the filesystem spells it, not as the dialog handed it
+      // over — see `cmir_read_dir`. What the blocks are filed under has to be
+      // the same string next time or the next import will double them.
+      const scanned = await scan(picked);
+      const files = filesIn(scanned);
+      await importInto(scanned.dir, files);
+      setImported(await readImported());
+      setError(null);
+      setNote(read(scanned.dir, countOf(files), files.length, scanned));
+    } catch (reason) {
+      setError(String(reason));
+    }
+  }, []);
+
+  const forget = useCallback(async () => {
+    if (!canRemember()) {
+      setError("importing needs the desktop app");
+      return;
+    }
+    const dropped = theirsRef.current.length;
+    try {
+      await forgetImports();
+      setImported([]);
+      setError(null);
+      setNote(dropped === 1 ? "1 imported block dropped" : dropped + " imported blocks dropped");
+    } catch (reason) {
+      setError(String(reason));
+    }
+  }, []);
+
+  // Built once per change to a list rather than per keystroke — see `Index`.
+  const mine = useMemo(() => indexOf(memorized), [memorized]);
+  const theirs = useMemo(() => indexOf(imported), [imported]);
+
+  const recall = useCallback(
+    (argument: string, position: string) => recallIn(argument, mine, theirs, position),
+    [mine, theirs],
   );
 
   // One object, held between renders: the keymap takes this whole thing as part
@@ -119,7 +199,38 @@ export function useMemory(): Memory {
   const report = useCallback((reason: unknown) => setError(String(reason)), []);
 
   return useMemo(
-    () => ({ blocks, answersTo, keep, refresh, report, error }),
-    [blocks, answersTo, keep, refresh, report, error],
+    () => ({
+      memorized,
+      recall,
+      keep,
+      importFrom: () => void importFrom(),
+      forget: () => void forget(),
+      refresh,
+      report,
+      error,
+      note,
+    }),
+    [memorized, recall, keep, importFrom, forget, refresh, report, error, note],
   );
+}
+
+/**
+ * What an import came to, in a line. A folder only half walked, or a file that
+ * wouldn't open, is a block that isn't there and no other sign of it.
+ */
+function read(
+  dir: string,
+  blocks: number,
+  files: number,
+  scanned: { failed: number; truncated: boolean },
+): string {
+  const said =
+    blocks === 0
+      ? "no blocks in " + dir
+      : blocks + (blocks === 1 ? " block" : " blocks") +
+        " from " + files + (files === 1 ? " file" : " files");
+  const also: string[] = [];
+  if (scanned.failed > 0) also.push(scanned.failed + " unreadable");
+  if (scanned.truncated) also.push("folder too large to read whole");
+  return also.length > 0 ? said + " (" + also.join(", ") + ")" : said;
 }

@@ -71,7 +71,11 @@ export type SessionCommand =
   /** Open a folder of sheets, in place of the round on screen. */
   | { kind: "open" }
   /** Write the round out — asking where, the first time. */
-  | { kind: "save" };
+  | { kind: "save" }
+  /** Read a folder of CardMirror files in as blocks. */
+  | { kind: "import" }
+  /** Drop everything a folder of files put there. */
+  | { kind: "forget" };
 
 /**
  * Read a session command, or null if the line says something else (a speech
@@ -124,6 +128,15 @@ export function parseSessionCommand(text: string): SessionCommand | null {
       return { kind: "open" };
     case "save":
       return { kind: "save" };
+
+    // ---- what you carry between rounds. A folder of cut cards is already a
+    // folder of blocks (see memory/cmir.ts), so this is the same gesture as
+    // `:open` pointed at the other kind of file — and `:forget` is the way back
+    // out of one, which a command that reads thousands of blocks in needs.
+    case "import":
+      return { kind: "import" };
+    case "forget":
+      return { kind: "forget" };
 
     default:
       return null;
@@ -250,27 +263,15 @@ const newRoot =
 /**
  * The order `#` walks the marks in, and the whole of the design.
  *
- * The obvious reading of "a new argument numbered, lettered, or plain" is three
- * more creating keys — but there are five creating keys already (`a`, `o`, `O`,
- * `n`, `N`), and three marks apiece is fifteen bindings for a keymap that fits
- * on the status line today. It also asks the wrong question at the wrong time:
- * you are making an argument, and it wants to know about the *list*.
+ * The mark is not chosen at creation. A new argument takes the mark of
+ * whichever same-speech neighbour it lands next to (see `Flow.add`) — the
+ * second answer to an argument is marked like the first — and `#` re-marks it
+ * when that's wrong. One key rather than three marks apiece across five
+ * creating keys, and it asks about the argument rather than about the list.
  *
- * So the mark is not chosen at creation at all. A new argument takes the mark
- * of whichever same-speech neighbour it lands next to (see `Flow.add`), which
- * is right nearly always — the second answer to an argument is marked like
- * the first — and `#` re-marks it when that's wrong: a lettered aside in the
- * middle of a numbered run, an independent point that should carry no mark at
- * all. One key, no mode, and it composes with every way of making an argument
- * rather than doubling each of them. Helix earns its keyboard the same way:
- * operators on a selection, not a verb per noun.
- *
- * That selection is `v`, below — one argument by default, or a run picked out
- * in a column. `#` was originally "re-mark the whole group *for* you", back
- * when a column numbered as a single block; now that a mark is a per-argument
- * fact and a column can hold several independent runs (an implicit forest —
- * see `markIndices` in grid.ts), there is no group to imply, so it
- * re-marks whatever is selected instead.
+ * It re-marks whatever `v` has selected. There is no group to imply: a mark is
+ * a per-argument fact and a column can hold several independent runs (see
+ * `markIndices` in grid.ts).
  */
 const MARKS: Mark[] = ["num", "alpha", "none"];
 
@@ -328,22 +329,13 @@ const toggleSupport: Command = (ctx) => {
  * written under it, in order, kept in `~/.flow` against the argument itself
  * (see memory/store.ts). `A` puts them back the next time it comes up.
  *
- * What is memorized is what is on the sheet, not something typed into a
- * separate list: you have just flowed the four answers to neg flex, they are
- * sitting under it in the 2AC column, and the whole gesture is one key that
- * says "these — keep them". A block file you have to maintain somewhere else
- * is a block file that goes stale, and this cannot: the sheet is the only
- * place it can come from.
- *
- * Which means the same key also revises and forgets, without being a mode or a
- * toggle. `m` makes the store agree with the sheet, whatever it currently says
- * — drop an answer you have stopped making and press it again and the block is
- * the three that are left; `x` the answers entirely and press it and the block
- * is gone.
+ * What is memorized is what is on the sheet rather than something typed into a
+ * separate list — a block file you maintain elsewhere is one that goes stale.
+ * Which means the same key revises and forgets without being a mode: `m` makes
+ * the store agree with the sheet, whatever it currently says.
  *
  * The cursor's argument only, not the selection: a block belongs to the one
- * argument it answers, and there is no single argument a range of them is the
- * answers to.
+ * argument it answers.
  */
 const memorize: Command = ({ state, flow, memory, sheets }) => {
   if (state.memory) return state; // already looking at the store
@@ -365,16 +357,13 @@ function positionOf({ list, active }: CommandContext["sheets"]): string {
 /**
  * Show what you have memorized, or go back to the round.
  *
- * Not an overlay and not a sheet in the round: the same window, laid out the
- * same way, with a different document under it — your positions down the side
- * and the blocks in each as a two-column flow. Which is why there is no keymap
- * for it. A block is an argument with answers under it, so `i`, `a`, `o`, `x`,
- * `#`, `J`/`K` and `u` already mean the right things, and what they edit is
- * written back to `~/.flow` as you go (see useMemoryRound.ts).
+ * Not an overlay and not a sheet in the round: the same window with a different
+ * document under it, which is why there is no keymap for it. A block is an
+ * argument with answers under it, so `i`, `a`, `o`, `x`, `#`, `J`/`K` and `u`
+ * already mean the right things (see useMemoryRound.ts).
  *
  * The cursor is put down rather than carried across — the two documents share
- * no arguments — and picked back up on the way home, the same way leaving a
- * sheet and coming back to it does.
+ * no arguments — and picked back up on the way home.
  */
 const toggleMemory: Command = ({ state, sheets }) => ({
   ...state,
@@ -390,21 +379,22 @@ const toggleMemory: Command = ({ state, sheets }) => ({
 });
 
 /**
- * Insert the memorized answers to the cursor's argument, as responses in the
- * next speech — `4A` for a speech further out, the same way `a` takes a count.
+ * Insert the answers to the cursor's argument, as responses in the next speech
+ * — `4A` for a speech further out, the same way `a` takes a count.
  *
  * `a` and `A` are the same gesture at two speeds: one empty answer to write
- * yourself, or every answer you already know you make. Which is why this lands
- * the cursor on the first of them and does *not* open the editor — the text is
- * already there, and what you do next is read down the block and add the one
- * thing this round called for.
+ * yourself, or every answer you already know you make. Which is why the cursor
+ * lands on the first of them and the editor stays shut — the text is there, and
+ * what you do next is read it.
  *
- * One commit for the lot, so the block is one undo rather than four.
+ * The block is whichever answers it, memorized or imported; where it came from
+ * makes no difference here. What it cannot be is a guess between several files
+ * — `recall` returns nothing at all in that case. One commit for the lot.
  */
 const recall: Command = (ctx) => {
   const { state, flow, speeches, memory, sheets } = ctx;
   if (!state.cursorId || !flow.has(state.cursorId)) return state;
-  const block = memory.answersTo(flow.textOf(state.cursorId), positionOf(sheets));
+  const { block } = memory.recall(flow.textOf(state.cursorId), positionOf(sheets));
   if (!block || block.answers.length === 0) return state;
 
   const speech = counted(ctx) ?? flow.speechOf(state.cursorId) + 1;
@@ -477,24 +467,14 @@ const yank: Command = (ctx) => {
  * mean. A count names the speech, as it does everywhere else: `3p` puts the
  * copy in the 3rd speech rather than the cursor's own.
  *
- * A sibling rather than a response, because "put this here" is a statement
- * about where on the sheet it goes, not about what it answers — `p` next to an
- * argument gives you an argument next to it. Answering is `a`, and the two
- * compose: `a` an empty response and `p` into it.
+ * A sibling rather than a response: "put this here" is about where on the sheet
+ * it goes, not what it answers. Answering is `a`, and the two compose.
  *
- * With no cursor — an empty sheet, which is the whole point of `:new` then `p`
- * — it goes in as a fresh argument tree at the end of the flow, the way `n`
- * does, and in the speech it was copied *from*: an argument made in the 1NC
- * belongs in the 1NC of whatever position you file it under, and there is no
- * cursor to say otherwise.
- *
- * One commit for the lot, so a copy of four arguments is one undo. The cursor
- * lands on the first of them and the editor stays shut: the text is already
- * there, and what you do next is read it, not type it.
- *
- * A copy put down late enough in the round that its responses have no speech
- * left to go in arrives without them — see `Flow.paste`, which is also what
- * makes a seven-column exchange land readably on the two-column memory sheet.
+ * With no cursor — an empty sheet, the point of `:new` then `p` — it goes in as
+ * a fresh tree at the end, in the speech it was copied *from*. One commit for
+ * the lot, so four arguments are one undo; the cursor lands on the first and
+ * the editor stays shut. A copy put down too late in the round for its
+ * responses arrives without them (see `Flow.paste`).
  */
 const put =
   (where: "after" | "before"): Command =>

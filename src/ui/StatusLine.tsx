@@ -66,12 +66,19 @@ interface StatusLineProps {
   /** What went wrong writing it, if anything. */
   saveError: string | null;
   /**
-   * How many memorized answers the cursor's own argument has — i.e. what `A`
-   * would put in the next speech, and 0 when there is nothing to put there.
+   * How many answers the cursor's own argument has — i.e. what `A` would put in
+   * the next speech, and 0 when there is nothing to put there.
    */
   answers: number;
+  /**
+   * How many imported files answer the cursor's argument, when more than one
+   * does and so `A` will not pick between them. 0 the rest of the time.
+   */
+  among: number;
   /** What went wrong reaching `~/.flow`, if anything. */
   memoryError: string | null;
+  /** What last worked: what an import read in, what a `:forget` dropped. */
+  memoryNote: string | null;
   /** Whether the sheet showing is what you have memorized rather than the round. */
   memory: boolean;
   /** Everyone else in the room. */
@@ -113,7 +120,9 @@ export function StatusLine({
   savedIn,
   saveError,
   answers,
+  among,
   memoryError,
+  memoryNote,
   memory,
   peers,
   authorLabel,
@@ -217,6 +226,15 @@ export function StatusLine({
         </span>
       )}
 
+      {/* And what did take. Only `:import` and `:forget`, which otherwise
+          finish with nothing on the screen moving — `m` says what it did by the
+          answer count appearing on the argument. */}
+      {memoryNote !== null && (
+        <span className="app__file" title={memoryNote}>
+          {memoryNote}
+        </span>
+      )}
+
       {/* Who else is here, by name. The sheet says where they are; this says
           that they arrived at all — which is the part you can't see when your
           partner is working three speeches away, or when the assistant is
@@ -289,6 +307,12 @@ export function StatusLine({
           {answers} answer{answers === 1 ? "" : "s"}
         </span>
       )}
+
+      {/* That several imported files answer this argument, which is why `A`
+          does nothing on it. The count is the useful part: it is the difference
+          between "nothing is memorized here" and "the folder you read in has
+          eleven of these and none of them is the one you meant". */}
+      {among > 0 && <span className="app__flag">{among} files</span>}
 
       {/* Naming the pinned speech matters now that it doesn't follow the
           cursor — it's the difference between "focus is on" and knowing which
