@@ -166,11 +166,8 @@ export type Write =
  * What has to happen to `~/.flow` for it to say what the memory sheet now
  * says, given what it said when we last looked.
  *
- * A pure function of the two, and separate from the hook that runs it, because
- * this is the piece that can lose somebody a season of blocks: everything it
- * decides *not* to write is a block left as it was, and everything it decides
- * to write with no answers is a block deleted. It is worth being able to test
- * on its own.
+ * Pure, and separate from the hook that runs it, because this is the piece that
+ * can lose somebody a season of blocks — worth being able to test alone.
  *
  * Three rules, in this order:
  *

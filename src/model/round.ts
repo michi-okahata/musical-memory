@@ -12,14 +12,11 @@ import type { PeerRecord, Role } from "./types";
  * read side by side, not merged. So a sheet is a whole `Flow` with its own
  * tree, and this is the ordered set of them.
  *
- * What lives here rather than on a sheet is everything that is true of the
- * *document*: the bytes that go on the wire, who the peers are, and the undo
- * history. Undo especially — one history for the round, not one per sheet,
- * because `u` means "take back the last thing I did" and a debater who typed
- * on the wrong sheet and pressed undo means the thing they just typed, not the
- * last thing they happened to do on whichever sheet they are looking at now.
- * Undoing across a sheet boundary carries you back to the sheet it happened on
- * (see `undo`).
+ * What lives here rather than on a sheet is what is true of the *document*: the
+ * bytes on the wire, the peers, and the undo history. One history for the round
+ * — `u` means "take back the last thing I did", not the last thing on whichever
+ * sheet you happen to be looking at — so undoing across a boundary carries you
+ * back to the sheet it happened on (see `undo`).
  */
 
 /** The ordered list of sheets: `{ id, title }`, id doubling as its tree's key. */

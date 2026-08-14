@@ -36,18 +36,11 @@ export interface Copied {
   /**
    * The column it was taken from.
    *
-   * Where a copy *lands* is decided when it is put down rather than when it is
-   * taken, so this is not where it goes — `p` shifts the whole copy by the
-   * distance from its top to the destination, and every argument in it keeps
-   * its place relative to the rest. An exchange copied out of the 1AC becomes,
-   * in the 2AC, an argument with its answers a speech later and the answers to
-   * those a speech after that: the same shape, moved.
-   *
-   * It is still worth recording, because it is the only sensible default when
-   * nothing else names a column — `p` onto a sheet with no cursor on it, which
-   * is exactly the "file this argument under that position" gesture. An
-   * argument made in the 1NC belongs in the 1NC of wherever it is filed, not at
-   * the front of the round.
+   * Not where it goes: `p` shifts the whole copy by the distance from its top to
+   * the destination, so an exchange copied out of the 1AC keeps its shape a
+   * speech later. Worth recording because it is the only sensible default when
+   * nothing names a column — `p` onto a sheet with no cursor, which is the
+   * "file this under that position" gesture.
    */
   speech: number;
   children: Copied[];
@@ -84,15 +77,9 @@ export const DEFAULT_MARK: Mark = "num";
  * The sheet holds shorthand, and what marking one as a card buys you is the
  * glance, not the quotation.
  *
- * Orthogonal to `Mark` on purpose — an argument can be the second point in a
- * numbered run *and* be carded, and the two facts have nothing to say to each
- * other. Kept as its own field for the same reason `Mark` is per-argument: the
- * 1NC alternates cards and analytics freely, and there is no group to hang it
+ * Orthogonal to `Mark` on purpose, and per-argument for the same reason `Mark`
+ * is: the 1NC alternates cards and analytics freely, with no group to hang it
  * on.
- *
- * The word is available again, incidentally. "Card" used to mean the box on the
- * sheet and was renamed to `Argument` throughout, which is what frees it to
- * mean here what it means in a debate round.
  */
 export type Support = "card" | "analytic";
 

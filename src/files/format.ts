@@ -11,23 +11,17 @@ import {
  * What a sheet looks like on disk, and how a round is built back out of a
  * directory of them.
  *
- * Plain JSON, not the CRDT's own snapshot. The document is a Loro doc and could
- * be written out losslessly as bytes, which would keep ids, undo history and
- * per-argument authorship across a reload — but it would be a blob. A flow is
- * something you want to read a year later, grep for the disad you cut, diff
- * against the version your partner saved, and fix by hand when something goes
- * wrong with it. That is worth more than the history, which is a fact about one
- * sitting rather than about the round.
+ * Plain JSON, not the CRDT's own snapshot. Loro could be written out losslessly
+ * and keep ids, undo and authorship — but it would be a blob, and a flow is
+ * something you want to read a year later, grep, and diff against your
+ * partner's copy. That is worth more than the history.
  *
- * The cost is stated plainly so nobody is surprised by it: a sheet that has been
- * round-tripped through here is a *new* document. Its arguments have fresh ids,
- * undo starts empty, and who wrote which argument is gone. Two people who each
- * saved the same round and reopen their copies hold two documents that will not
- * merge — they will both be there, twice. Flowing together is what the room is
- * for; the file is where a round goes when the round is over.
+ * The cost, stated plainly: a round-tripped sheet is a *new* document. Fresh
+ * ids, empty undo, no authorship, and two saved copies of one round will not
+ * merge — they will both be there, twice. The room is for flowing together; the
+ * file is where a round goes when it is over.
  *
- * Nothing here touches the disk. That is disk.ts, and the split is what lets the
- * format be tested — and written by something with no filesystem at all.
+ * Nothing here touches the disk — that is disk.ts.
  */
 
 /**

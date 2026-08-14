@@ -73,20 +73,13 @@ export function selectionRange(
  * the root, plus everything that answers it.
  *
  * A flow says which argument answers which by putting them on the same row, one
- * column along — which is the whole grammar of the sheet and is also invisible
- * the moment a column gets busy. Six answers in the Block sit against six rows
- * of the 2AC, and the one you are reading is a row you have to trace by eye
- * across a couple of hundred pixels. This is that trace, drawn.
+ * column along — the whole grammar of the sheet, and invisible the moment a
+ * column gets busy. This is that trace, drawn.
  *
- * Ancestors rather than the enclosing tree, because the ancestors are a *path* —
- * at most one argument per column — so however deep the exchange gets, the
- * thread stays a line marching left, and never becomes a wash over half the
- * sheet. Forwards, only the direct answers: everything under those is a
- * different question ("what did they say to that") asked from a different
- * cursor.
- *
- * The cursor's own argument is not in it. It is already saying where it is,
- * three ways, and this set is drawn as "related to where you are".
+ * Ancestors rather than the enclosing tree, because ancestors are a *path* — at
+ * most one per column — so the thread stays a line marching left rather than a
+ * wash over half the sheet. Forwards, only the direct answers. The cursor's own
+ * argument is not in it: it is already saying where it is.
  */
 export function threadOf(roots: Argument[], cursorId: string | null): Set<string> {
   const thread = new Set<string>();

@@ -19,15 +19,10 @@ import {
  * `speech` is the column an argument sits in (0 = first speech, 1 = next, ...);
  * the tree edges are the "who responded to what" relationships.
  *
- * A round is several of these — the case, topicality, each disadvantage — and
- * the set of them is `Round` (see round.ts), which owns the document all these
- * trees live in. This class knows about one sheet and nothing else: it does not
- * export, import, or undo, because those are things you do to a round.
- *
- * Everything here is deliberately free of the DOM and of React: the same class
- * is what a headless peer runs — a relay keeping a room's document, or an
- * assistant transcribing a speech into it — so a flow can be joined by
- * something that has no sheet to draw.
+ * A round is several of these, and the set of them is `Round` (see round.ts).
+ * This class knows one sheet and nothing else: it does not export, import or
+ * undo, because those are things you do to a round. Free of the DOM and React,
+ * so the same class is what a headless peer runs.
  */
 
 /** The tree a document written before sheets existed keeps its arguments in. */
@@ -356,30 +351,18 @@ export class Flow {
    * Write a copy back in at `anchor`, in `speech`, responses and all. Returns
    * the id of the argument at the top of it.
    *
-   * One commit for the whole subtree, so putting an exchange back is one undo
-   * rather than one per argument.
+   * One commit for the whole subtree, so putting an exchange back is one undo.
    *
-   * `lastSpeech` is the final column of the sheet being put onto, and a
-   * response with no column left to go in is *not put in* — nor is anything
-   * answering it. Two things make that case ordinary rather than defensive: the
-   * memory sheet is two columns wide (see memory/sheet.ts) where the round is
-   * seven, and a copy taken early in the round can always be put down late in
-   * it.
+   * `lastSpeech` is the final column of the sheet being put onto, and a response
+   * with no column left is *not put in*, nor is anything answering it — an
+   * ordinary case, since the memory sheet is two columns wide where the round is
+   * seven. Dropping beats the alternatives: past the last column leaves
+   * arguments the sheet never draws, and flattening onto it lays a response at
+   * its parent's row (see `layoutFlow`), where the two cover each other.
+   * Nothing is lost that isn't still in the copy.
    *
-   * Dropping is the least bad of three. Writing them past the last column
-   * leaves arguments the sheet never draws — in the document, invisible, and
-   * unreachable by the cursor. Flattening them *onto* the last column is worse
-   * still, and not merely untidy: a response drawn in its own parent's column
-   * is laid out at its parent's row (see `layoutFlow`), so the two land on top
-   * of each other and neither can be read. Leaving them out is the only one of
-   * the three whose result is a sheet, and nothing is lost that isn't still
-   * sitting in the copy — `u`, and put it somewhere with room.
-   *
-   * The mark comes with the copy rather than being inherited from whatever it
-   * lands next to, which is the one place a new argument doesn't follow its
-   * neighbour (see `neighborMark`). A copy is a copy — you took a lettered
-   * aside, you get a lettered aside — and `#` re-marks it if the run it landed
-   * in disagrees.
+   * The mark comes with the copy rather than from what it lands next to — the
+   * one place a new argument doesn't follow its neighbour (see `neighborMark`).
    */
   paste(anchor: Anchor, copied: Copied, speech: number, lastSpeech: number): TreeID {
     return this.batch(() =>

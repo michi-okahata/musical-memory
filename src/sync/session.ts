@@ -22,21 +22,16 @@ import {
 /**
  * A flow, and everybody else who is on it.
  *
- * This owns the document, the connection and the presence store together,
- * because they change together: joining a room replaces the document, a
- * reconnect has to re-announce the peer, and a peer that goes away takes its
- * cursor off the sheet. Written as a plain object with a subscription rather
- * than as hooks so that none of that ordering has to be expressed as an effect
- * — and so the same class runs headless, which is what a transcribing
- * assistant would be.
+ * The document, the connection and the presence store together, because they
+ * change together: joining a room replaces the document, a reconnect
+ * re-announces the peer, a peer that leaves takes its cursor off the sheet. A
+ * plain object with a subscription rather than hooks, so none of that ordering
+ * has to be an effect and the same class runs headless.
  *
- * ---- what is shared, and what isn't ------------------------------------
- * The document is the flow: arguments, their responses, which speech each was
- * made in, how it's marked. It merges, it persists, it is what undo walks.
- * Presence — where a peer's cursor is, whether they're typing — is ephemeral
- * and never enters the document. The editor's own state (the pending count, the
- * focused speech, the zoom) is not shared at all: those are how *you* are
- * reading the sheet, and two people reading one flow differently is the point.
+ * Three tiers: the document merges and persists; presence (cursors, who is
+ * typing) is ephemeral and never enters it; the editor's own state (count,
+ * focus, zoom) isn't shared at all, since two people reading one flow
+ * differently is the point.
  */
 
 /** How long a peer's presence survives without a heartbeat. */

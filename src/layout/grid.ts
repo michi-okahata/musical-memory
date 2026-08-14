@@ -47,11 +47,8 @@ function computeSpans(roots: Argument[]): Map<string, number> {
  *     b. …their own ev says so       alpha → b
  *     3. no impact                   num   → 3   ← not 1, continues
  *
- * `alpha` is always a *local* aside — a breakdown of whichever numbered point
- * is current — so a fresh `num` starts a fresh alphabet, the way "1. a. b. /
- * 2. a. b." works in any outline. Continuing a) b) c) into d) e) f) across an
- * intervening numbered point would say the two asides were one list, which
- * they aren't: they're about different points.
+ * `alpha` is always a *local* aside, so a fresh `num` starts a fresh alphabet —
+ * continuing across a numbered point would say the two asides were one list.
  *
  *     1. permutation                 num   → 1
  *     a. non-unique                  alpha → a
@@ -59,13 +56,9 @@ function computeSpans(roots: Argument[]): Map<string, number> {
  *     2. link turn                   num   → 2   ← breaks the alphabet
  *     a. concedes the impact         alpha → a   ← not c, starts over
  *
- * An unmarked argument passes through either sequence without consuming a
- * place in it or breaking it — it isn't a digression, it's simply not part of
- * either list.
- *
- * Grouped by speech first because siblings mix every column together in
- * document order — an argument's neighbours are its column's slice of that
- * order, not the whole of it.
+ * An unmarked argument passes through either sequence without consuming a place
+ * or breaking it. Grouped by speech first, because siblings mix every column
+ * together in document order.
  */
 function markIndices(siblings: Argument[]): Map<string, number | null> {
   const bySpeech = new Map<number, Argument[]>();
@@ -174,9 +167,9 @@ export function markerOf(index: number | null, mark: Mark): string {
  * a spanning argument's leftover height is added to its LAST row only.
  * Siblings stay flush and the slack falls after the last one.
  *
- * `rowGap` is the grid's row gap. An argument spanning n rows also covers the
- * n-1 gaps between them, so counting them is the difference between a tight
- * sheet and one that grows a few pixels of slack under every tall argument.
+ * `rowGap` is the grid's row gap: an argument spanning n rows also covers the
+ * n-1 gaps between them, which is a few pixels of slack under every tall
+ * argument if you forget them.
  */
 export function measureRows(
   placed: Placed[],

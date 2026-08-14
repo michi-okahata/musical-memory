@@ -10,12 +10,10 @@ import type { Flow } from "../model/flow";
  * anything that has to see the final text (leaving edit mode, unmounting), and
  * nothing is lost.
  *
- * What lands in the document is the *span that changed*, not the whole
- * argument — see `Flow.spliceText`. The editor is an ordinary textarea holding
- * a whole string, so the difference is worked out here, against the last string
- * this buffer wrote. That is what lets somebody else be in the same argument:
- * writing the whole string back would delete whatever they added while you were
- * typing, and a span doesn't.
+ * What lands in the document is the *span that changed* (see `Flow.spliceText`),
+ * worked out here against the last string this buffer wrote — which is what
+ * lets somebody else be in the same argument. Writing the whole string back
+ * would delete whatever they added while you were typing.
  */
 
 /** Typing writes through to the CRDT at most this often. */
