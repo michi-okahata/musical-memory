@@ -24,9 +24,13 @@
   /* Clears the sheet's own top padding so the first sheet name lines up with
      the speech headers. The left inset is the sidebar's own — the page has no
      side padding, because the flow's columns run to the window edge. */
-  padding-right: calc(6px * var(--zoom));
+  /* padding-right: calc(6px * var(--zoom));
   margin-left: calc(5px * var(--zoom));
-  margin-right: calc(4px * var(--zoom));
+  margin-right: calc(4px * var(--zoom)); */
+}
+
+.app__sidebar-label {  
+  margin-left: calc(5px * var(--zoom));
 }
 
 .app__sidebar-head {

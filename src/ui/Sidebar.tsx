@@ -55,7 +55,7 @@ export function Sidebar({
   return (
     <nav className="app__sidebar" aria-label={label}>
       <div className="app__sidebar-head">
-        <span>{label}</span>
+        <span className="app__sidebar-label">{label}</span>
         <button
           type="button"
           className="app__sidebar-add"
