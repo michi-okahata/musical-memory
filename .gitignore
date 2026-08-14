@@ -28,3 +28,6 @@ notes.md
 
 # rooms the relay is keeping (see server/relay.mjs)
 .flow-rooms
+
+# what install.sh writes when it runs
+install-log.txt
