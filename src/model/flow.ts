@@ -3,6 +3,7 @@ import type { LoroTree, LoroTreeNode, TreeID } from "loro-crdt";
 import {
   DEFAULT_MARK,
   DEFAULT_SUPPORT,
+  LEGACY_MARK,
   type Argument,
   type Copied,
   type Mark,
@@ -560,12 +561,12 @@ export class Flow {
 
 /**
  * How a node's group is numbered. Anything unrecognised — an older document
- * written before marks existed, a peer on a newer version — reads as the
- * default, so a flow always renders.
+ * written before marks existed, a peer on a newer version — reads as
+ * `LEGACY_MARK`, so a flow always renders, and renders as it used to.
  */
 function readMark(node: LoroTreeNode): Mark {
   const m = node.data.get("mark");
-  return m === "alpha" || m === "none" || m === "num" ? m : DEFAULT_MARK;
+  return m === "alpha" || m === "none" || m === "num" ? m : LEGACY_MARK;
 }
 
 /**

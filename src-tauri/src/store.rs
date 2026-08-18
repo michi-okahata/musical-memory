@@ -44,6 +44,11 @@ const DIR: &str = ".flow";
 /// tell them apart is the one between them.
 const FILE: &str = "db";
 
+/// What the user has changed about the keys, beside it. JSON and not a table
+/// in the database next door, because this one is written by *hand*: it is
+/// opened in a text editor, and a row in a SQLite file cannot be.
+const CONFIG: &str = "config.json";
+
 /// The schema. One step, because nothing has shipped yet and so there is no
 /// file anywhere that was written by an older build of this — the current
 /// schema and the whole history of it are the same thing.
@@ -133,6 +138,23 @@ fn store_in(home: &Path) -> Result<PathBuf, String> {
     let dir = home.join(DIR);
     fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     Ok(dir.join(FILE))
+}
+
+/// The settings file, in the same directory and made by the same call — so a
+/// machine that has never run this ends up with the directory either way.
+fn config_in(home: &Path) -> Result<PathBuf, String> {
+    Ok(store_in(home)?.with_file_name(CONFIG))
+}
+
+/// Its contents, or `None` where there is no file — which is every machine
+/// until somebody writes one, and so is not a failure. A file that exists and
+/// cannot be read is: that is a config somebody wrote and is not getting.
+fn read_config(path: &Path) -> Result<Option<String>, String> {
+    match fs::read_to_string(path) {
+        Ok(text) => Ok(Some(text)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(format!("{}: {e}", path.display())),
+    }
 }
 
 fn path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
@@ -231,6 +253,21 @@ fn memorize(
         }
     }
     tx.commit()
+}
+
+/// `~/.flow/config.json`, as text, or null where there is none.
+///
+/// Text and not a parsed shape: what a key may be bound to is the frontend's
+/// question (see `src/editor/config.ts`), and a config half-understood on the
+/// way through here would be one whose mistakes are reported twice, in two
+/// vocabularies.
+#[tauri::command]
+pub fn store_config(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    let home = app
+        .path()
+        .home_dir()
+        .map_err(|e| format!("no home directory: {e}"))?;
+    read_config(&config_in(&home)?)
 }
 
 #[tauri::command]
@@ -411,8 +448,8 @@ pub fn store_forget_imports(app: tauri::AppHandle) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        blocks, forget_imports, import, memorize, open, rename_position, steps_of, store_in,
-        Imported, ImportedFile, MIGRATIONS,
+        blocks, config_in, forget_imports, import, memorize, open, read_config, rename_position,
+        steps_of, store_in, Imported, ImportedFile, MIGRATIONS,
     };
 
     /// A store of our own, named after the test using it.
@@ -726,6 +763,23 @@ mod tests {
         // And nothing is claimed to be there that isn't: the file itself is the
         // database's to make, on the first open.
         assert!(!store.exists());
+    }
+
+    #[test]
+    fn settings_sit_beside_the_database() {
+        let home = home("settings");
+        let config = config_in(&home).unwrap();
+
+        assert_eq!(config, home.join(".flow").join("config.json"));
+        // No file yet is the ordinary case, not an error: the app ships
+        // without one and reads its own defaults.
+        assert_eq!(read_config(&config).unwrap(), None);
+
+        std::fs::write(&config, r#"{"keys":{"g":"answer"}}"#).unwrap();
+        assert_eq!(
+            read_config(&config).unwrap().as_deref(),
+            Some(r#"{"keys":{"g":"answer"}}"#)
+        );
     }
 
     /// Every launch after the first runs this too, and it must be a no-op.

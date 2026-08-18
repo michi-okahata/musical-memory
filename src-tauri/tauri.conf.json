@@ -15,7 +15,8 @@
         "title": "",
         "hiddenTitle": true,
         "width": 800,
-        "height": 600
+        "height": 600,
+        "dragDropEnabled": false
       }
     ],
     "security": {
@@ -31,6 +32,12 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "macOS": {
+      "files": {
+        "Resources/Assets.car": "icons/mac/Assets.car",
+        "Resources/flow.icns": "icons/mac/flow.icns"
+      }
+    }
   }
 }

@@ -35,12 +35,20 @@
 
 /* Both sides are named, though one of them is the sheet's own colour: the
    asymmetry is a choice about how loud the sheet should be, not a fact about
-   the aff, and giving it a shade of its own should mean changing a token. */
-.flow-band.is-aff {
+   the aff, and giving it a shade of its own should mean changing a token.
+
+   The header takes the same shade as the band it caps. It has to say it itself
+   rather than let the band show through, because it is opaque by necessity —
+   it is sticky, and the flow scrolls under it — and painting the sheet colour
+   there regardless left every neg column with a strip of paper above its band,
+   which read as the label belonging to the sheet rather than to the speech. */
+.flow-band.is-aff,
+.flow-header.is-aff {
   background: var(--band-aff);
 }
 
-.flow-band.is-neg {
+.flow-band.is-neg,
+.flow-header.is-neg {
   background: var(--band-neg);
 }
 
@@ -60,7 +68,6 @@
   position: sticky;
   top: 0;
   z-index: 2;
-  background: var(--sheet);
   border-bottom: 1px solid var(--rule);
   /* The underline has to read as one line across the whole sheet, so every
      header fills the row rather than taking its own text's height — a
@@ -205,8 +212,6 @@
 .flow-num {
   flex: none;
   padding-left: var(--argument-gutter);
-  font-size: var(--argument-font-size);
-  line-height: var(--argument-line-height);
   color: var(--muted);
   font-variant-numeric: tabular-nums;
   user-select: none;
@@ -224,21 +229,12 @@
   display: grid;
   grid-template-columns: auto 1fr;
   column-gap: calc(4px * var(--zoom));
-  font-size: var(--argument-font-size);
-  line-height: var(--argument-line-height);
   color: var(--placeholder);
   user-select: none;
 }
 
 .flow-empty dd {
   margin: 0;
-}
-
-/* The keys in the mono face, as they are everywhere else they are written
-   down — the status line, and the panel the second of these opens. */
-.flow-empty kbd {
-  font-family: var(--font-mono);
-  color: var(--muted);
 }
 
 /* Where one argument ends and the next begins. Zero height so it can't

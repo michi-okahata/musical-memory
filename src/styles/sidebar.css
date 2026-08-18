@@ -21,16 +21,13 @@
   flex-direction: column;
   overflow: hidden;
   border-right: 1px solid var(--rule);
-  /* Clears the sheet's own top padding so the first sheet name lines up with
-     the speech headers. The left inset is the sidebar's own — the page has no
-     side padding, because the flow's columns run to the window edge. */
-  /* padding-right: calc(6px * var(--zoom));
-  margin-left: calc(5px * var(--zoom));
-  margin-right: calc(4px * var(--zoom)); */
 }
 
-.app__sidebar-label {  
-  margin-left: calc(5px * var(--zoom));
+/* The head's label lines up with the sheet names under it, which start after
+   their own (transparent) left rule — so the inset is that hairline plus the
+   rows' padding, and not a round number that happens to match at zoom 1. */
+.app__sidebar-label {
+  margin-left: calc(1px + 4px * var(--zoom));
 }
 
 .app__sidebar-head {
@@ -51,19 +48,30 @@
   z-index: 2;
 }
 
-.app__sidebar-add {
+/* The two marks the list can be worked with — add, and delete. Both are a
+   glyph and nothing else: a button drawn as a button would be the only framed
+   control in an app made of hairlines, and there are two of them on a panel a
+   sheet wide. They differ only in size, because `×` reads bigger than `+` at
+   the same one. */
+.app__sidebar-add,
+.app__sheet-delete {
+  flex: none;
   border: 0;
   background: none;
   font: inherit;
-  font-size: calc(12px * var(--zoom));
   line-height: 1;
   color: var(--muted);
   cursor: pointer;
   padding: 0 calc(2px * var(--zoom));
 }
 
-.app__sidebar-add:hover {
+.app__sidebar-add:hover,
+.app__sheet-delete:hover {
   color: var(--accent);
+}
+
+.app__sidebar-add {
+  font-size: calc(12px * var(--zoom));
 }
 
 .app__sheets {
@@ -81,8 +89,6 @@
   display: flex;
   align-items: center;
   gap: calc(4px * var(--zoom));
-  font-size: var(--argument-font-size);
-  line-height: var(--argument-line-height);
   padding: calc(2px * var(--zoom)) calc(4px * var(--zoom));
   border-left: 1px solid transparent;
   cursor: pointer;
@@ -99,6 +105,24 @@
   color: var(--argument-fg);
 }
 
+/* Being dragged. Faded rather than lifted or hidden: the row is still where it
+   is until you let go, and the line below says where it would land — two marks
+   for one drag is one too many. */
+.app__sheet.is-dragging {
+  opacity: 0.4;
+}
+
+/* Where it would land, drawn in the gap the pointer is over. The cursor's own
+   colour, because it is the same statement the sheet makes about an argument:
+   this is the place in the list you have picked out. */
+.app__sheet.is-drop-before {
+  box-shadow: inset 0 calc(1px * var(--zoom)) 0 var(--cursor);
+}
+
+.app__sheet.is-drop-after {
+  box-shadow: inset 0 calc(-1px * var(--zoom)) 0 var(--cursor);
+}
+
 /* Long position names are the norm — "Politics DA — Midterms" — and the list
    is one column of a sheet wide. Clipped rather than wrapped: a wrapping name
    makes the rows different heights, and the point of the list is that it can
@@ -111,15 +135,11 @@
   text-overflow: ellipsis;
 }
 
+/* Over the name it is replacing, at the name's own size and in its place, so
+   renaming reads as the row becoming editable rather than as a box opening on
+   top of it. The field itself is in common.css. */
 .app__sheet-rename {
   flex: 1 1 auto;
-  min-width: 0;
-  border: 0;
-  outline: none;
-  padding: 0;
-  font: inherit;
-  color: var(--argument-fg);
-  background: transparent;
 }
 
 /* Who is on this sheet. The same colours their cursors wear out on the flow,
@@ -130,7 +150,11 @@
   gap: calc(2px * var(--zoom));
 }
 
+/* A pixel smaller than the same dot on the status line, which is the one place
+   in the app a size is allowed to differ for its own sake: these sit at the end
+   of a name that is already being clipped to fit a column a sheet wide. */
 .app__sheet-peer {
+  flex: none;
   width: calc(4px * var(--zoom));
   height: calc(4px * var(--zoom));
   border-radius: 50%;
@@ -138,37 +162,25 @@
 
 /* Only on hover — a round with a handful of positions doesn't need an × sitting
    next to every name all the time, and the accidental click a permanent one
-   invites is worse than the extra reach a hidden one costs. */
+   invites is worse than the extra reach a hidden one costs.
+
+   Out of the layout entirely rather than merely invisible, and it costs the
+   keyboard nothing: the button is `tabIndex={-1}` on purpose (see Sidebar.tsx)
+   because the keyboard already has `:delete`, so this is the mouse's copy of a
+   command and not the only way to reach one. */
 .app__sheet-delete {
-  flex: none;
   display: none;
-  border: 0;
-  background: none;
-  font: inherit;
   font-size: calc(11px * var(--zoom));
-  line-height: 1;
-  color: var(--muted);
-  cursor: pointer;
-  padding: 0 calc(2px * var(--zoom));
 }
 
 .app__sheet:hover .app__sheet-delete {
   display: block;
 }
 
-.app__sheet-delete:hover {
-  color: var(--accent);
-}
-
 .app__sheets-empty {
   margin: calc(6px * var(--zoom)) calc(4px * var(--zoom));
   font-size: calc(9px * var(--zoom));
   color: var(--placeholder);
-}
-
-.app__sheets-empty kbd {
-  font-family: var(--font-mono);
-  color: var(--muted);
 }
 
 /* Hidden, but still laid out as a column that isn't there: the sheet takes

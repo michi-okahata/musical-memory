@@ -35,8 +35,9 @@ import { useLibrary } from "./ui/useLibrary";
 import { useMemory } from "./ui/useMemory";
 import { useMemoryRound } from "./ui/useMemoryRound";
 import { useKeymap } from "./ui/useKeymap";
+import { useConfig } from "./ui/useConfig";
 import { useTextBuffer } from "./ui/useTextBuffer";
-import type { Argument } from "./model/types";
+import { DEFAULT_MARK, DEFAULT_SUPPORT, type Argument } from "./model/types";
 
 /**
  * The composition root: it owns the round and the editor state, derives what
@@ -74,6 +75,12 @@ function App() {
   // Where the round is kept. Bound by `:open` or the first `:save`, and from
   // then on the flow is written out as it is taken down.
   const library = useLibrary(roundDoc, actions.load);
+
+  // Which key does what: the defaults with ~/.flow/config.json read over them.
+  // Everything the keyboard touches takes them from here — the window listener,
+  // the argument editor, and the sheet of keys on `:?`, which has to show the
+  // ones this user actually has.
+  const config = useConfig();
 
   // What the user carries between rounds: the answers they've memorized to
   // arguments, kept in ~/.flow. Nothing to do with the round's own folder
@@ -165,15 +172,17 @@ function App() {
   );
 
   // How the cursor's own argument is marked, for the status line — but only
-  // when it isn't the default. A run of one draws no mark at all (a bare "1."
-  // is noise), so without this `#` would look like a key that does nothing on
-  // the first argument of a fresh run, which is exactly where you press it.
+  // when it isn't the default, which is what the status line decides. With no
+  // cursor there is no argument to report on, so it stands in the default and
+  // the chip stays off; `DEFAULT_MARK` rather than the mark itself so that
+  // "nothing to say" doesn't have to be restated here every time the default
+  // moves.
   //
   // Read from the flow rather than from `roots`, but keyed on `roots`: the mark
   // is written to the document, so the read is only stale until the commit that
   // changed it lands — which is the same tick that replaces `roots`.
   const mark = useMemo(
-    () => (cursorId && flow?.has(cursorId) ? flow.markOf(cursorId) : "num"),
+    () => (cursorId && flow?.has(cursorId) ? flow.markOf(cursorId) : DEFAULT_MARK),
     [roots, cursorId, flow],
   );
 
@@ -185,12 +194,12 @@ function App() {
   // argument, and `c` is otherwise a key with no visible answer on a sheet you
   // haven't marked up yet.
   const support = useMemo(
-    () => (cursorId && flow?.has(cursorId) ? flow.supportOf(cursorId) : "card"),
+    () => (cursorId && flow?.has(cursorId) ? flow.supportOf(cursorId) : DEFAULT_SUPPORT),
     [roots, cursorId, flow],
   );
 
   // What there is to recall against the cursor's own argument, for the status
-  // line — which is the only warning that `A` is about to put four arguments on
+  // line — which is the only warning that ⌘P is about to put four arguments on
   // the sheet, and the only sign that several imported files answer it and so
   // none of them will. Keyed on `roots` like `mark` above, and for the same
   // reason: it reads the document, and `roots` changing is the tick the
@@ -322,6 +331,8 @@ function App() {
       memory,
     },
     setEditor,
+    flushText,
+    config.keys,
   );
 
   // What the command line says, read at submit time rather than from this
@@ -412,6 +423,7 @@ function App() {
       argument={arg}
       editing={arg.id === editingId}
       dictionary={dictionary}
+      keys={config.keys}
       onChange={(text) => queueText(arg.id, text)}
       onDone={stopEditing}
       onSelect={() => flow && setEditor((s) => moveCursorTo(s, flow, arg.id, placed))}
@@ -445,6 +457,10 @@ function App() {
           setEditor((s) => openSheet(s, activeSheet, id));
         }}
         onRename={sheetActions.rename}
+        // Dragging a row reorders the round, the same as ⌘[ and ⌘] — but the
+        // memory sheet's positions are alphabetical and nobody's to reorder,
+        // so there the rows don't drag at all.
+        onMove={editor.memory ? undefined : sheetActions.move}
         onDelete={(sheetId) => {
           // Same rule `:delete` follows — never the last sheet. The Sidebar
           // already hides the button in that case; this is the backstop.
@@ -491,6 +507,10 @@ function App() {
         memory={editor.memory}
         memoryError={memory.error}
         memoryNote={memory.note}
+        // What is wrong with ~/.flow/config.json, if anything. Nowhere else
+        // would say: a key that silently does nothing is indistinguishable
+        // from a key you mistyped.
+        configError={config.problems[0] ?? null}
         authorLabel={authorLabel}
         // Every one of these takes the *latest* state rather than the `editor`
         // this render closed over — see CommandLine.tsx. Hence also the
@@ -506,7 +526,12 @@ function App() {
       {/* What the keys do, on `:?`. Last, so it paints over the sheet and the
           status line both — it is the one thing in the app that is allowed to
           be in front of the flow. */}
-      {help && <Keymap onClose={() => setEditor((s) => ({ ...s, help: false }))} />}
+      {help && (
+        <Keymap
+          keys={config.keys}
+          onClose={() => setEditor((s) => ({ ...s, help: false }))}
+        />
+      )}
     </main>
   );
 }

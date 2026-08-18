@@ -21,6 +21,18 @@ body {
   display: flex;
   align-items: flex-start;
 
+  /* The sheet's own type, set once and inherited by everything that doesn't
+     say otherwise — which is everything except the chrome: the speech headers,
+     the sidebar's head, the status line and the keymap's labels each name
+     their own size, and are the whole of the list. Written here rather than
+     repeated at every element that holds a line of the flow, because the one
+     thing that must never drift is *which* things are drawn at the sheet's
+     size: a number a pixel off its argument is a number in the wrong column.
+     Form controls are the exception the browser makes, and they ask for it
+     back by hand — see `font: inherit` in common.css and on .flow-argument. */
+  font-size: var(--argument-font-size);
+  line-height: var(--argument-line-height);
+
   /* ---- zoom -----------------------------------------------------------
      Every metric the sheet is drawn at, in terms of one multiplier, which
      `App` sets inline from the editor state (the 1 below is the fallback,
@@ -45,8 +57,8 @@ body {
      the sheet readable. */
   --status-height: calc(20px * var(--zoom));
   --argument-font-size: calc(10px * var(--zoom));
-  /* The 3px on the left is the whole distance between the rule and the first
-     letter, and it is doing real work at 10px type. The same 3px is what
+  /* The 2px on the left is the whole distance between the rule and the first
+     letter, and it is doing real work at 10px type. The same 2px is what
      separates a number from the text it numbers. Nothing on the right: the
      gutter is the column's, not the argument's — see --column-gap. */
   --argument-pad: 0 0 0 calc(2px * var(--zoom));

@@ -1,6 +1,14 @@
 import { type Mark, type Speech } from "../model/types";
 import { type Anchor } from "../model/flow";
-import { moveCursor, moveToColumn, selectionRange, type Motion } from "../layout/navigate";
+import { markerOf } from "../layout/grid";
+import { decodeAnswer, encodeAnswer } from "../memory/answer";
+import {
+  columnOrder,
+  moveCursor,
+  moveToColumn,
+  selectionRange,
+  type Motion,
+} from "../layout/navigate";
 import {
   openSheet,
   followFocus,
@@ -233,6 +241,64 @@ const respond: Command = (ctx) => {
 };
 
 /**
+ * The argument after the cursor's parent: its next sibling in the same speech,
+ * failing that whatever comes next down the parent's column.
+ *
+ * The column second because a column holds a forest rather than one list (see
+ * `markIndices` in grid.ts) — the argument below the last of a run is usually
+ * another tree's, and it is still the next thing there is to answer. The
+ * sibling first because the two only disagree where an answer written into its
+ * parent's own speech (`4a`) has landed between two siblings, and there the run
+ * you are working down is the one to follow, not whatever the rows put next.
+ *
+ * Null when the cursor's argument answers nothing — a root has no run to
+ * continue — or when its parent is the last thing in its column.
+ */
+function nextAlong({ state, flow, placed }: CommandContext): string | null {
+  const parent = state.cursorId ? flow.parentOf(state.cursorId) : null;
+  if (!parent) return null;
+
+  const speech = flow.speechOf(parent);
+  const siblings = flow
+    .childrenOf(flow.parentOf(parent))
+    .filter((id) => flow.speechOf(id) === speech);
+  const among = siblings.indexOf(parent);
+  if (among >= 0 && siblings[among + 1]) return siblings[among + 1];
+
+  const at = placed.find((p) => p.id === parent);
+  if (!at) return null;
+  const column = columnOrder(placed, at.col);
+  const below = column.findIndex((p) => p.id === parent);
+  return below < 0 ? null : (column[below + 1]?.id ?? null);
+}
+
+/**
+ * Answer the next argument along — the one after the cursor's parent — with
+ * the answer landing in the cursor's own speech.
+ *
+ * `a` starts an exchange and this is how you work down one. Having answered
+ * the 1NC's first argument you are standing on your own answer, a column to
+ * the right of what you were reading, and what you do next is nearly always
+ * answer the argument below it — which `a` cannot say, since `a` answers
+ * whatever the cursor is *on*. Otherwise that is `h`, `j`, `a`, three keys to
+ * carry on doing the one thing the speech consists of.
+ *
+ * Nothing past the bottom of that column: there is nothing left to answer
+ * there, and starting an argument of your own is `n`.
+ */
+const answerNext: Command = (ctx) => {
+  const { state, flow, speeches } = ctx;
+  if (!state.cursorId || !flow.has(state.cursorId)) return state;
+  const next = nextAlong(ctx);
+  if (!next) return state;
+  // The cursor's own speech, not the parent's next: you are already writing in
+  // the column this belongs in. A count still names one outright, as everywhere.
+  const speech = counted(ctx) ?? flow.speechOf(state.cursorId);
+  if (speech >= speeches.length) return state;
+  return editing(state, flow.addResponse(next, "", speech));
+};
+
+/**
  * Another argument alongside the cursor's — helix's `o` / `O`, opening below
  * or above. Same parent, so on a root this makes another root.
  */
@@ -327,7 +393,7 @@ const toggleSupport: Command = (ctx) => {
 /**
  * Memorize the answers to the cursor's argument — every response already
  * written under it, in order, kept in `~/.flow` against the argument itself
- * (see memory/store.ts). `A` puts them back the next time it comes up.
+ * (see memory/store.ts). ⌘P puts them back the next time it comes up.
  *
  * What is memorized is what is on the sheet rather than something typed into a
  * separate list — a block file you maintain elsewhere is one that goes stale.
@@ -337,10 +403,23 @@ const toggleSupport: Command = (ctx) => {
  * The cursor's argument only, not the selection: a block belongs to the one
  * argument it answers.
  */
-const memorize: Command = ({ state, flow, memory, sheets }) => {
+const memorize: Command = ({ state, flow, memory, sheets, placed }) => {
   if (state.memory) return state; // already looking at the store
   if (!state.cursorId || !flow.has(state.cursorId)) return state;
-  const answers = flow.childrenOf(state.cursorId).map((id) => flow.textOf(id));
+  // Each answer is written with the marker the sheet is drawing beside it (see
+  // memory/answer.ts). Off `placed` rather than recomputed, because the number
+  // that goes into the block should be the one you were looking at when you
+  // pressed `m` — this is the one caller that already has the layout in hand.
+  const answers = flow
+    .childrenOf(state.cursorId)
+    // Before the marker goes on, not after: `o` makes an argument before you
+    // have typed into it, and an answer that is still empty used to drop out
+    // here on its own. Marked first, it would be stored as a bare "1.".
+    .filter((id) => flow.textOf(id).trim())
+    .map((id) => {
+      const index = placed.find((p) => p.id === id)?.index ?? null;
+      return encodeAnswer(markerOf(index, flow.markOf(id)), flow.textOf(id));
+    });
   memory.keep(positionOf(sheets), flow.textOf(state.cursorId), answers);
   return { ...state, count: null };
 };
@@ -380,12 +459,20 @@ const toggleMemory: Command = ({ state, sheets }) => ({
 
 /**
  * Insert the answers to the cursor's argument, as responses in the next speech
- * — `4A` for a speech further out, the same way `a` takes a count.
+ * — ⌘P, and the only key that also works while you are typing.
  *
- * `a` and `A` are the same gesture at two speeds: one empty answer to write
+ * Which is why it is on the platform chord rather than a letter: the moment you
+ * want your block is *while* you are still writing down the argument it answers
+ * and they are already a sentence ahead of you. What you have typed is written
+ * through to the flow first, so the lookup is against the argument as it now
+ * reads (see useKeymap), and the answers land under it without the editor
+ * closing. A letter could only be reached after `Esc`.
+ *
+ * `a` and this are the same gesture at two speeds: one empty answer to write
  * yourself, or every answer you already know you make. Which is why the cursor
  * lands on the first of them and the editor stays shut — the text is there, and
- * what you do next is read it.
+ * what you do next is read it. `4⌘P` names a speech further out, the same way
+ * `a` takes a count, outside the editor where digits are digits and not text.
  *
  * The block is whichever answers it, memorized or imported; where it came from
  * makes no difference here. What it cannot be is a guess between several files
@@ -403,17 +490,26 @@ const recall: Command = (ctx) => {
   const parent = state.cursorId;
   let first: string | null = null;
   flow.batch(() => {
-    for (const answer of block.answers) {
-      const id = flow.addResponse(parent, answer, speech);
+    for (const line of block.answers) {
+      // Marked as the block says, not as the neighbouring column says: a block
+      // is a list you wrote down once, and landing it beside a lettered aside
+      // shouldn't quietly re-letter it. What the markers count *to* is still
+      // the landing sheet's — see memory/answer.ts.
+      const { mark, text } = decodeAnswer(line);
+      const id = flow.add({ under: parent }, { text, speech, mark });
       first ??= id;
     }
   });
+  // Except mid-sentence, where the cursor is what the open editor is on: moving
+  // it to the answers would leave the two pointing at different arguments, and
+  // you are not finished with this one — that is why you are still typing it.
+  if (state.editingId) return { ...state, count: null };
   return { ...state, cursorId: first ?? state.cursorId, count: null };
 };
 
 /**
  * Enter or leave visual selection: `v` anchors it at the cursor; `v` again
- * (or anything that isn't a selection-aware key — see `SELECTION_KEYS`) drops
+ * (or anything that isn't a selection-aware command — see `KEEPS_SELECTION`) drops
  * it. With no cursor there is nothing to anchor to.
  */
 const toggleSelect: Command = ({ state }) => {
@@ -695,7 +791,11 @@ const goToSheet =
     return openSheet(state, sheets.active, next.id);
   };
 
-/** Shift the open sheet up or down the list. */
+/**
+ * Shift the open sheet up or down the list — the same move a row dragged in
+ * the sidebar makes, and the reason both go through `SheetControls.move`
+ * rather than the round directly.
+ */
 const shiftSheet =
   (delta: number): Command =>
   ({ state, sheets }) => {
@@ -723,9 +823,21 @@ const digit =
       ? state
       : { ...state, count: (state.count ?? 0) * 10 + d };
 
-const digits = Object.fromEntries(
-  [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((d) => [String(d), digit(d)]),
-);
+const DIGITS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+
+/**
+ * The digits, as ten commands — `digit3` and the rest.
+ *
+ * They are in the registry like everything else so that a config can move
+ * them (a numeric keypad, a layout where the digits are shifted), and named
+ * rather than special-cased so that `run` can ask what a key *did* rather
+ * than what it was: only these ten leave a count standing, and after a remap
+ * the character on the key no longer says which ten they are.
+ */
+const digits = Object.fromEntries(DIGITS.map((d) => [`digit${d}`, digit(d)]));
+
+/** Their names, for the one rule that has to know them. */
+const COUNTING = new Set(DIGITS.map((d) => `digit${d}`));
 
 /**
  * The keymap's lookup key for an event. Shift is already baked into `key`
@@ -740,47 +852,113 @@ export function keyOf(e: {
 }
 
 /**
- * `a` is the one key that means something different here than in vim: an
- * *answer*, the core move in flowing a round. Editing keeps `i` — "insert"
- * would be ambiguous as a command here anyway (insert text, or insert an
- * argument?), and a mis-pressed `i` that silently made an argument would
- * swallow the edit you meant to type.
+ * Everything a key can be made to do, by name.
+ *
+ * The names are the other half of the keymap and are why this is a registry
+ * rather than the key-to-function table it used to be: a key is a *preference*
+ * — a US bracket, a hand that learned Colemak, a left-hander who wants the
+ * creating keys somewhere else — and what an editor can do is not. So the two
+ * are separated, the names are the stable thing, and `~/.flow/config.json`
+ * binds them (see config.ts).
+ *
+ * They are what somebody writes in that file, so they are named for what they
+ * do to a flow rather than for how they are implemented: `answer`, not
+ * `addChildInNextSpeech`.
  */
 export const commands: Record<string, Command> = {
   ...digits,
-  h: motion("h"),
-  j: motion("j"),
-  k: motion("k"),
-  l: motion("l"),
-  ":": openCommand, // :2ac — jump to a speech by name
-  i: edit,
-  Enter: edit,
-  a: respond, // answer — a child, next speech column
-  A: recall, // …or every answer you have memorized to it, as a block
-  m: memorize, // memorize the answers under the cursor, as the block for it
-  M: toggleMemory, // …and everything you have memorized, as a flow of its own
-  o: sibling("after"), // another argument below…
-  O: sibling("before"), // …and above
-  n: newRoot("after"), // a new argument tree, clear of this one
-  N: newRoot("before"), // …above it: the overview case
-  f: toggleFocus, // narrow the speeches you aren't in
-  v: toggleSelect, // select a run in this column — # / x / y / J / K act on it
-  y: yank, // copy it and everything answering it…
-  p: put("after"), // …and put it back below the cursor, or `3p` in the 3rd speech
-  P: put("before"), // …above it
+  left: motion("h"),
+  down: motion("j"),
+  up: motion("k"),
+  right: motion("l"),
+  commandLine: openCommand, // :2ac — jump to a speech by name
+  edit,
+  answer: respond, // a child, next speech column
+  answerNext, // …and on to the next argument down the column you're answering
+  recall, // every answer you have memorized to this one, as a block
+  memorize, // memorize the answers under the cursor, as the block for it
+  memorySheet: toggleMemory, // …and everything you have memorized, as a flow of its own
+  addBelow: sibling("after"), // another argument below…
+  addAbove: sibling("before"), // …and above
+  newBelow: newRoot("after"), // a new argument tree, clear of this one
+  newAbove: newRoot("before"), // …above it: the overview case
+  focus: toggleFocus, // narrow the speeches you aren't in
+  select: toggleSelect, // select a run in this column — mark / delete / copy act on it
+  copy: yank, // …and everything answering it
+  putBelow: put("after"), // put the copy below the cursor, or `3p` in the 3rd speech
+  putAbove: put("before"), // …above it
+  nextSheet: goToSheet(1),
+  prevSheet: goToSheet(-1),
+  sheetDown: shiftSheet(1), // the sheet itself moves down the list…
+  sheetUp: shiftSheet(-1), // …or up it
+  sidebar: toggleSidebar, // show or hide the list of sheets
+  mark: cycleMark, // how the selection is marked off: 1. / a. / nothing
+  support: toggleSupport, // was it a card, or did they just say it
+  shiftDown: moveSelection("down"), // shift the selection past its next sibling…
+  shiftUp: moveSelection("up"), // …or its previous one
+  zoomIn: zoomBy(ZOOM_STEP),
+  zoomOut: zoomBy(1 / ZOOM_STEP),
+  zoomReset: resetZoom, // "actual size", where every other desktop app keeps it
+  delete: remove,
+  undo: history("undo"),
+  redo: history("redo"),
+  cancel: ({ state }) => state, // just drops the pending count, below
+};
+
+/**
+ * The keys as they come out of the box.
+ *
+ * `a` is the one that means something different here than in vim: an *answer*,
+ * the core move in flowing a round. Editing keeps `i` — "insert" would be
+ * ambiguous as a command here anyway (insert text, or insert an argument?),
+ * and a mis-pressed `i` that silently made an argument would swallow the edit
+ * you meant to type.
+ *
+ * Several keys may name one command and nothing stops them: that is what the
+ * pairs below are. It reads the way it does — key on the left, command on the
+ * right — because that is the question being asked at a keypress, and because
+ * it is the shape a config file has to be in to add a key without restating
+ * the one it is joining.
+ */
+export const DEFAULT_KEYS: Record<string, string> = {
+  ...Object.fromEntries(DIGITS.map((d) => [String(d), `digit${d}`])),
+  h: "left",
+  j: "down",
+  k: "up",
+  l: "right",
+  ":": "commandLine",
+  i: "edit",
+  Enter: "edit",
+  a: "answer",
+  A: "answerNext",
+  "M-p": "recall",
+  m: "memorize",
+  M: "memorySheet",
+  o: "addBelow",
+  O: "addAbove",
+  n: "newBelow",
+  N: "newAbove",
+  f: "focus",
+  v: "select",
+  y: "copy",
+  p: "putBelow",
+  P: "putAbove",
   // The round's other sheets. Brackets because they are the pair vim already
   // uses for "the next one of these, the previous one", and because the keys
   // that make arguments are all letters — reaching for a bracket is never half
   // of writing something down.
-  "]": goToSheet(1),
-  "[": goToSheet(-1),
-  "}": shiftSheet(1), // and shifted, the sheet itself moves
-  "{": shiftSheet(-1),
-  "M-b": toggleSidebar, // the list of sheets — Cmd+B, same chord every editor uses for this
-  "#": cycleMark, // how the selection is marked off: 1. / a. / nothing
-  c: toggleSupport, // was it a card, or did they just say it
-  J: moveSelection("down"), // shift the selection past its next sibling…
-  K: moveSelection("up"), // …or its previous one
+  "]": "nextSheet",
+  "[": "prevSheet",
+  // And on the platform chord, the sheet itself moves — the same relation ⌘
+  // has to the arrow keys everywhere else, and the pair of the brackets above
+  // rather than a second gesture to remember.
+  "M-]": "sheetDown",
+  "M-[": "sheetUp",
+  "M-b": "sidebar", // the chord every editor uses for a side panel
+  "#": "mark",
+  c: "support",
+  J: "shiftDown",
+  K: "shiftUp",
   // Zoom, on the platform chord — this is a desktop app, and Cmd +/- is where
   // a Mac user's hand already goes. It was on the bare keys because Cmd +/- is
   // the *browser's* zoom and can't be taken off it, but that is only true of
@@ -790,50 +968,94 @@ export const commands: Record<string, Command> = {
   //
   // Both faces of each key, since the shift state of `=/+` and `-/_` is not
   // something anyone thinks about while reaching for zoom.
-  "M-=": zoomBy(ZOOM_STEP),
-  "M-+": zoomBy(ZOOM_STEP),
-  "M--": zoomBy(1 / ZOOM_STEP),
-  "M-_": zoomBy(1 / ZOOM_STEP),
-  "M-0": resetZoom, // "actual size", where every other desktop app keeps it
-  x: remove,
+  "M-+": "zoomIn",
+  "M-=": "zoomIn",
+  "M--": "zoomOut",
+  "M-_": "zoomOut",
+  "M-0": "zoomReset",
+  x: "delete",
   // Undo: vim's u / Ctrl-r, plus the platform chord this is a desktop app on.
-  u: history("undo"),
-  "C-r": history("redo"),
-  "M-z": history("undo"),
-  "M-Z": history("redo"),
-  Escape: ({ state }) => state, // just drops the pending count, below
+  u: "undo",
+  "C-r": "redo",
+  "M-z": "undo",
+  "M-Z": "redo",
+  Escape: "cancel",
 };
 
-const isDigit = (key: string) => key.length === 1 && key >= "0" && key <= "9";
+/**
+ * The commands that run while an argument is open for editing. Every other key
+ * belongs to the textarea, which is the rule that lets `a`, `o` and `x` be
+ * letters at all.
+ *
+ * Only what is worth interrupting a sentence for. Recall is: the answers to
+ * what you are typing are wanted while the argument is still being said, and
+ * every second the editor is shut is a second of the speech you are not
+ * writing down. Zoom and the sidebar can wait for `Esc`.
+ *
+ * By command and not by key, so that a config which moves recall moves this
+ * with it — and so that whatever it is bound to has to be a chord, which is
+ * the config's own business to get right: a letter here would simply be a
+ * letter you can no longer type.
+ *
+ * Both ends of the keyboard have to agree about this — the window listener
+ * that runs the command (useKeymap) and the textarea that otherwise stops keys
+ * reaching it (ArgumentEditor) — so they ask here rather than each keeping
+ * their own list.
+ */
+const WHILE_EDITING = new Set(["recall"]);
+
+export function runsWhileEditing(key: string, keys: Record<string, string>): boolean {
+  return WHILE_EDITING.has(keys[key]);
+}
 
 /**
- * Keys that read or extend the selection rather than starting fresh from the
- * cursor — `run` leaves `selectAnchor` standing for these and drops it for
- * everything else (see `run`, below). `h`/`j`/`k`/`l` are here even though
- * `h`/`l` usually end up dropping the selection anyway (`releaseSelection`
+ * Commands that read or extend the selection rather than starting fresh from
+ * the cursor — `run` leaves `selectAnchor` standing for these and drops it for
+ * everything else (see `run`, below). The motions are here even though left
+ * and right usually end up dropping the selection anyway (`releaseSelection`
  * catches that once they've actually left the column) — while they haven't,
  * mid-selection movement has to be allowed to run at all.
  *
- * `y` is deliberately *not* here even though it reads the selection: `run`
+ * `copy` is deliberately *not* here even though it reads the selection: `run`
  * calls the command before clearing the anchor, so the copy is taken correctly
  * either way, and dropping the selection afterwards is what vim does — the
  * selection was there to say what to copy, and it has said it.
  */
-const SELECTION_KEYS = new Set(["h", "j", "k", "l", "v", "#", "c", "x", "J", "K"]);
+const KEEPS_SELECTION = new Set([
+  "left",
+  "down",
+  "up",
+  "right",
+  "select",
+  "mark",
+  "support",
+  "delete",
+  "shiftDown",
+  "shiftUp",
+]);
 
 /**
- * Run whatever `key` is bound to. Returns null when nothing is — the caller
- * should leave the event alone rather than swallowing it.
+ * Run whatever `key` is bound to in `keys`. Returns null when nothing is — the
+ * caller should leave the event alone rather than swallowing it.
+ *
+ * The bindings are handed in rather than reached for, because they are the
+ * user's (see config.ts) and this stays a pure transition from one editor
+ * state to the next. `DEFAULT_KEYS` is the default so that a caller with no
+ * config — a test, most usefully — can go on asking what `x` does.
  *
  * Clearing the pending count lives here and not in the commands: only the
- * digits build it up, and every other key spends it and is done. The
- * selection is cleared the same way and for the same reason — only the keys
- * that read or extend it (`SELECTION_KEYS`, plus the digits a count for one of
+ * digits build it up, and every other key spends it and is done. The selection
+ * is cleared the same way and for the same reason — only the commands that
+ * read or extend it (`KEEPS_SELECTION`, plus the digits a count for one of
  * them might need) get to leave it standing; anything else — editing an
- * argument, answering, undo — is a normal-mode action that shouldn't inherit
- * a selection some earlier `v` left lying around.
+ * argument, answering, undo — is a normal-mode action that shouldn't inherit a
+ * selection some earlier `select` left lying around.
  */
-export function run(key: string, ctx: CommandContext): EditorState | null {
+export function run(
+  key: string,
+  ctx: CommandContext,
+  keys: Record<string, string> = DEFAULT_KEYS,
+): EditorState | null {
   // The keymap on screen owns the keyboard. Every key is swallowed rather than
   // run, so that reaching for something while reading the help sheet can't
   // quietly answer an argument on the flow behind it — and `Escape`, or the
@@ -842,14 +1064,18 @@ export function run(key: string, ctx: CommandContext): EditorState | null {
   // Non-null for every key, unlike the fall-through below, which is what makes
   // the caller call `preventDefault` and actually swallow them.
   if (ctx.state.help) {
-    const closes = key === "Escape" || key === "?" || key === "Enter";
+    // Whatever `cancel` is bound to, plus the two keys that put it away
+    // without being commands at all — the `?` that asked for it, and Enter.
+    const closes = keys[key] === "cancel" || key === "?" || key === "Enter";
     return closes ? { ...ctx.state, help: false } : ctx.state;
   }
-  const command = commands[key];
+  const name = keys[key];
+  const command = name ? commands[name] : undefined;
   if (!command) return null;
   const next = command(ctx);
-  const spent = isDigit(key) ? next : { ...next, count: null };
+  const counting = COUNTING.has(name);
+  const spent = counting ? next : { ...next, count: null };
   const kept =
-    isDigit(key) || SELECTION_KEYS.has(key) ? spent : { ...spent, selectAnchor: null };
+    counting || KEEPS_SELECTION.has(name) ? spent : { ...spent, selectAnchor: null };
   return releaseSelection(followFocus(kept, ctx.flow), ctx.placed);
 }

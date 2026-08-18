@@ -20,10 +20,19 @@
   background: color-mix(in srgb, var(--sheet) 72%, transparent);
 }
 
+/* A fixed width and a header, a scrolling middle and a footer: the search box
+   and the way out are the two things that must not scroll away, since one of
+   them is how the list got short and the other is how you leave.
+
+   The width is set rather than merely capped so the panel doesn't resize under
+   the caret as a search narrows it — a reference that changes shape while you
+   type is one you have to re-find your place in on every keystroke. */
 .keymap {
-  max-width: calc(560px * var(--zoom));
+  display: flex;
+  flex-direction: column;
+  width: calc(560px * var(--zoom));
+  max-width: 100%;
   max-height: 100%;
-  overflow-y: auto;
   background: var(--sheet);
   border: 1px solid var(--rule);
   border-radius: calc(3px * var(--zoom));
@@ -31,16 +40,60 @@
      sheet, and without it the panel and the flow behind it read as one
      surface — the hairline alone is the same weight as the rules the sheet is
      made of. */
-  box-shadow: 0 calc(6px * var(--zoom)) calc(28px * var(--zoom)) rgba(0, 0, 0, 0.16);
-  padding: calc(14px * var(--zoom)) calc(16px * var(--zoom));
+  box-shadow: 0 calc(6px * var(--zoom)) calc(28px * var(--zoom)) var(--shadow-ink);
+}
+
+/* The same line the sidebar's own head sits on, and the same rule under it. */
+.keymap__head {
+  flex: none;
+  display: flex;
+  align-items: baseline;
+  gap: calc(8px * var(--zoom));
+  padding: calc(7px * var(--zoom)) calc(16px * var(--zoom));
+  border-bottom: 1px solid var(--rule);
+}
+
+.keymap__label {
+  font-family: var(--font-mono);
+  font-size: calc(9px * var(--zoom));
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+/* The box is the panel, and a field drawn inside it would be a second frame
+   around the same thing — see common.css, where that is also the command
+   line's argument and the rename box's. */
+.keymap__search {
+  flex: 1;
+}
+
+.keymap__search::placeholder {
+  color: var(--placeholder);
+}
+
+/* The one part that scrolls. `min-height: 0` because a flex child will
+   otherwise refuse to be shorter than its content and take the panel past the
+   bottom of the window instead of scrolling. */
+.keymap__scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: calc(12px * var(--zoom)) calc(16px * var(--zoom));
 }
 
 /* Two columns where there is room for two, one where there isn't. The groups
    are short and unequal, so they are laid out as columns to be filled rather
    than as a grid to be aligned — a row per group would leave the long ones
-   ragged against the short. */
+   ragged against the short.
+
+   "Room for two" is stated as a minimum column width and a maximum count, and
+   so is answered by the layout itself: two columns if each can be that wide,
+   one otherwise. A media query cannot ask this, because the width it would
+   have to test against is the panel's, and the panel is drawn in the sheet's
+   units — a breakpoint in window pixels held two columns of nothing at a zoom
+   where the panel had already given up its own width to `max-width: 100%`. */
 .keymap__groups {
-  columns: 2;
+  columns: calc(240px * var(--zoom)) 2;
   column-gap: calc(22px * var(--zoom));
 }
 
@@ -71,8 +124,6 @@
   column-gap: calc(8px * var(--zoom));
   row-gap: calc(1px * var(--zoom));
   margin: 0;
-  font-size: var(--argument-font-size);
-  line-height: var(--argument-line-height);
 }
 
 .keymap__keys dt {
@@ -89,27 +140,29 @@
   color: var(--muted);
 }
 
+/* The one place a key is not an aside. Everywhere else `kbd` is the mono face
+   in the quietest ink (common.css); here the keys are the column you came to
+   read, so they take the ink and the face of the `dt` around them — which is
+   to say, they undo the whole of that rule. */
 .keymap__keys kbd {
   font: inherit;
+  color: inherit;
+}
+
+/* Nothing matched. In the group titles' own quiet ink rather than the sheet's,
+   because it is the panel talking about itself and not something you can
+   press. */
+.keymap__empty {
+  margin: 0;
+  color: var(--muted);
 }
 
 .keymap__close {
-  margin: calc(2px * var(--zoom)) 0 0;
-  padding-top: calc(8px * var(--zoom));
+  flex: none;
+  margin: 0;
+  padding: calc(7px * var(--zoom)) calc(16px * var(--zoom));
   border-top: 1px solid var(--rule);
   font-size: calc(9px * var(--zoom));
   color: var(--placeholder);
 }
 
-.keymap__close kbd {
-  font-family: var(--font-mono);
-  color: var(--muted);
-}
-
-/* One column once there isn't room for two — a narrow window is the one place
-   the panel is allowed to be tall and scroll. */
-@media (max-width: 520px) {
-  .keymap__groups {
-    columns: 1;
-  }
-}

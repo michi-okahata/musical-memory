@@ -5,7 +5,7 @@
      for the status line, where the point is that it looks like a terminal. */
   --font-ui: ui-sans-serif, -apple-system, "SF Pro Text", "Segoe UI", system-ui,
     sans-serif;
-  --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
+  --font-mono: ui-monospace, monospace;
 
   font-family: var(--font-ui);
   font-size: 11px;
@@ -78,7 +78,12 @@
      far faster than a 1px line, and a line can no longer announce itself by
      changing colour — so the wash is pitched well clear of --band-neg (it has
      to read as "here", never as "this is a negative speech"), and the hairline
-     is firm enough to draw the exact edge once your eye has arrived. */
+     is firm enough to draw the exact edge once your eye has arrived.
+
+     Declared once, here: a custom property that names another is substituted
+     from whatever that other one computes to *on the same element*, and both
+     live on `:root`, so re-stating this under the dark theme would only say
+     the same thing twice. Same for `--thread` below. */
   --cursor: var(--accent);
   --cursor-bg: rgba(0, 0, 0, 0.13);
   --cursor-ring: rgba(0, 0, 0, 0.5);
@@ -121,6 +126,12 @@
   --thread: var(--accent);
   --rule: #d9d9d9;
   --argument-hover: rgba(0, 0, 0, 0.04);
+  /* The ink of the one shadow in the app (see .keymap). A token because it is
+     the one thing a monochrome palette cannot invert by rule: everything else
+     here swaps light for dark and keeps its meaning, but a shadow is *always*
+     darker than what it falls on, so on a dark sheet it has to get heavier
+     rather than lighter to separate the panel from the flow at all. */
+  --shadow-ink: rgba(0, 0, 0, 0.16);
   /* How close the cursor may get to the top or bottom before the sheet
      scrolls to keep it in comfortable view. */
   --scroll-keepout: 25vh;
@@ -144,9 +155,9 @@
     --argument-border: #575757;
     --rule: #2e2e2e;
     --argument-hover: rgba(255, 255, 255, 0.05);
+    --shadow-ink: rgba(0, 0, 0, 0.5);
 
     --accent: #fafafa;
-    --cursor: var(--accent);
     --cursor-bg: rgba(255, 255, 255, 0.14);
     --cursor-ring: rgba(255, 255, 255, 0.55);
     --accent-soft: rgba(255, 255, 255, 0.08);

@@ -1,5 +1,7 @@
+import { markIndices, markerOf } from "../layout/grid";
 import { Round } from "../model/round";
 import type { Argument, Speech } from "../model/types";
+import { decodeAnswer, encodeAnswer } from "./answer";
 import { argumentKey, samePosition } from "./recall";
 import type { Block } from "./store";
 
@@ -92,7 +94,15 @@ export function roundOf(blocks: Block[], also: string[] = []): Round {
     flow.batch(() => {
       for (const block of mine) {
         const root = flow.addRoot(null, block.argument, 0);
-        for (const answer of block.answers) flow.addResponse(root, answer, 1);
+        for (const line of block.answers) {
+          // The mark comes off the line rather than from the answer above it:
+          // the block said how it was marked, and inheriting instead would let
+          // the first answer decide for the rest of a block it was memorized
+          // alongside. `add` rather than `addResponse` because an explicit
+          // mark is exactly what that wrapper doesn't take.
+          const { mark, text } = decodeAnswer(line);
+          flow.add({ under: root }, { text, speech: 1, mark });
+        }
       }
     });
   }
@@ -107,6 +117,12 @@ export function roundOf(blocks: Block[], also: string[] = []): Round {
  * fact about the file you are carrying into this round, not about the block.
  * So recalled answers take the support of whatever they land beside, the same
  * as anything else `add` creates, and `c` corrects them where that is wrong.
+ *
+ * The mark is the one that goes the other way, and the difference is worth
+ * stating. Whether four answers are a numbered list is not a fact about your
+ * evidence, it is the shape of the block itself — it is what makes them four
+ * answers rather than a paragraph — so it travels with it. It travels *as
+ * text* because text is all a block can hold (see answer.ts).
  */
 
 /**
@@ -125,10 +141,18 @@ export function blocksIn(roots: Argument[]): Draft[] {
   for (const root of roots) {
     const key = argumentKey(root.text);
     if (!key) continue;
+    // Emptied answers are dropped before the run is counted, not after, so the
+    // block is numbered as it will read rather than around a gap nobody can
+    // see. What the numbers actually come out as on the way back in is the
+    // landing sheet's business either way — see answer.ts.
+    const written = root.children.filter((child) => child.text.trim());
+    const indices = markIndices(written);
     drafts.push({
       key,
       argument: root.text.trim(),
-      answers: root.children.map((child) => child.text.trim()).filter(Boolean),
+      answers: written.map((child) =>
+        encodeAnswer(markerOf(indices.get(child.id) ?? null, child.mark), child.text.trim()),
+      ),
     });
   }
   return drafts;

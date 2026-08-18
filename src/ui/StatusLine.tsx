@@ -1,7 +1,7 @@
 import React from "react";
 import { CommandLine } from "./CommandLine";
 import { folderName } from "../files/disk";
-import type { Mark, Support } from "../model/types";
+import { DEFAULT_MARK, type Mark, type Support } from "../model/types";
 import type { Peer } from "../sync/presence";
 import type { ConnectionStatus } from "../sync/transport";
 
@@ -66,17 +66,23 @@ interface StatusLineProps {
   /** What went wrong writing it, if anything. */
   saveError: string | null;
   /**
-   * How many answers the cursor's own argument has — i.e. what `A` would put in
+   * How many answers the cursor's own argument has — i.e. what ⌘P would put in
    * the next speech, and 0 when there is nothing to put there.
    */
   answers: number;
   /**
    * How many imported files answer the cursor's argument, when more than one
-   * does and so `A` will not pick between them. 0 the rest of the time.
+   * does and so ⌘P will not pick between them. 0 the rest of the time.
    */
   among: number;
   /** What went wrong reaching `~/.flow`, if anything. */
   memoryError: string | null;
+  /**
+   * What is wrong with `~/.flow/config.json`, if anything — the first problem
+   * of however many, since they are all in one small file and fixing the first
+   * is what you are about to go and do anyway.
+   */
+  configError: string | null;
   /** What last worked: what an import read in, what a `:forget` dropped. */
   memoryNote: string | null;
   /** Whether the sheet showing is what you have memorized rather than the round. */
@@ -93,6 +99,18 @@ interface StatusLineProps {
   onCommandSubmit: () => void;
   onCommandCancel: () => void;
 }
+
+/**
+ * What the mark chip says. The notation itself rather than a name for it,
+ * since the notation is both shorter and the thing you'd recognise. Every mark
+ * is listed even though the default never reaches the chip — which one that is
+ * belongs in one place (`DEFAULT_MARK`), not spelled out again here.
+ */
+const MARK_TEXT: Record<Mark, string> = {
+  num: "1. 2. 3.",
+  alpha: "a. b. c.",
+  none: "no marks",
+};
 
 /** What the room chip says about the connection. */
 const STATUS_TEXT: Record<ConnectionStatus, string> = {
@@ -122,6 +140,7 @@ export function StatusLine({
   answers,
   among,
   memoryError,
+  configError,
   memoryNote,
   memory,
   peers,
@@ -226,6 +245,16 @@ export function StatusLine({
         </span>
       )}
 
+      {/* A config that didn't take. The keys go on working — whatever the file
+          got wrong is simply not applied (see editor/config.ts) — which is
+          exactly why it has to be said here: a binding that quietly isn't
+          there is indistinguishable from one you mistyped. */}
+      {configError !== null && (
+        <span className="app__file is-error" title={configError}>
+          config
+        </span>
+      )}
+
       {/* And what did take. Only `:import` and `:forget`, which otherwise
           finish with nothing on the screen moving — `m` says what it did by the
           answer count appearing on the argument. */}
@@ -279,15 +308,14 @@ export function StatusLine({
           that what `x` deletes is a block you keep between rounds rather than
           an argument in this one. Not a mode: no key means anything different,
           and the mode chip on the left would be lying if it said so. */}
-      {memory && <span className="app__flag is-memory">memorized</span>}
+      {memory && <span className="app__flag">memorized</span>}
 
-      {/* Only when the cursor's own argument isn't marked the ordinary way, on
-          the same terms as the zoom below: the default says nothing worth a
-          chip, and the two that aren't the default are invisible on a run that
-          has only one argument so far. */}
-      {mark !== "num" && (
-        <span className="app__flag">{mark === "alpha" ? "a. b. c." : "no marks"}</span>
-      )}
+      {/* Only when the cursor's own argument isn't marked the way a new one
+          starts out, on the same terms as the zoom below: the default is what
+          most of the sheet is and says nothing worth a chip. What's left is a
+          run someone marked on purpose, and the chip names the notation — the
+          marker in the gutter says "a", not which sequence it belongs to. */}
+      {mark !== DEFAULT_MARK && <span className="app__flag">{MARK_TEXT[mark]}</span>}
 
       {/* That the cursor's argument was something they said rather than
           something they read. Beside the mark because it is the same kind of
@@ -298,7 +326,7 @@ export function StatusLine({
 
       {/* That there are answers memorized to the cursor's argument. A fact
           about the argument rather than about the editor, like the mark above
-          it — and the only thing that says `A` has something to insert here,
+          it — and the only thing that says ⌘P has something to insert here,
           since what is in `~/.flow` is otherwise invisible until it lands on
           the sheet. Counted, because how many are coming is the difference
           between pressing it and writing the answer yourself. */}
@@ -308,7 +336,7 @@ export function StatusLine({
         </span>
       )}
 
-      {/* That several imported files answer this argument, which is why `A`
+      {/* That several imported files answer this argument, which is why ⌘P
           does nothing on it. The count is the useful part: it is the difference
           between "nothing is memorized here" and "the folder you read in has
           eleven of these and none of them is the one you meant". */}

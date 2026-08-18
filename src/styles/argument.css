@@ -5,9 +5,10 @@
      the argument. */
   border: 0;
   padding: var(--argument-pad);
-  font-family: inherit;
-  font-size: var(--argument-font-size);
-  line-height: var(--argument-line-height);
+  /* The sheet's type, which `.app` already sets on everything — named again
+     here only because one of the three elements wearing this class is a
+     textarea, and a form control inherits no part of a font unless told to. */
+  font: inherit;
   /* Transparent, so the argument takes the colour of the side band behind it.
      An argument that painted its own surface would have to be told which side
      it was on, and — worse — would be a second source of truth for a colour
@@ -24,7 +25,10 @@
   min-width: 0;
 }
 
-.flow-argument:hover {
+/* Stated as "not the edit box" rather than painted on and then painted off
+   again: the textarea carries this class too, and a hover wash on it would sit
+   over the suggestion the ghost layer is drawing underneath. */
+.flow-argument:not(.flow-argument--edit):hover {
   background: var(--argument-hover);
 }
 
@@ -49,11 +53,6 @@
   /* Tight gaps mean neighbours would clip the ring — lift it above them. A
      grid item takes z-index without being positioned. */
   z-index: 1;
-}
-
-.flow-argument:focus-visible {
-  outline: 2px solid var(--cursor);
-  outline-offset: -2px;
 }
 
 .flow-argument__placeholder {
@@ -83,7 +82,6 @@
 .flow-editor__ghost {
   overflow: hidden;
   pointer-events: none;
-  background: none;
   /* The suggestion is drawn in place, which means everything around it has to
      be laid out and not painted. */
   color: var(--placeholder);
@@ -97,7 +95,12 @@
   color: var(--muted);
 }
 
-/* Editing variant — same box, textarea resets only. */
+/* Editing variant — same box, textarea resets only.
+
+   No focus ring, on either of the two properties that could draw one. The box
+   sits inside a cell already showing the cursor three ways — the rule, the
+   wash, the hairline — so a ring would be a fourth saying the same thing, and
+   the loudest of them. */
 .flow-argument--edit {
   display: block;
   resize: none;
@@ -106,17 +109,4 @@
   overflow: hidden;
   /* Transparent, so the suggestion behind it shows through. */
   background: transparent;
-}
-
-.flow-argument--edit:hover {
-  background: transparent;
-}
-
-/* The edit box is inside a cell already showing the cursor three ways — the
-   rule, the wash, the hairline. A focus ring is a fourth saying the same thing,
-   and the loudest of them. The `outline: none` above can't stop it on its own:
-   the textarea is the only `.flow-argument` anything can focus, so
-   `.flow-argument:focus-visible` always applies, and it wins on specificity. */
-.flow-argument--edit:focus-visible {
-  outline: none;
 }

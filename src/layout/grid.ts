@@ -59,8 +59,13 @@ function computeSpans(roots: Argument[]): Map<string, number> {
  * An unmarked argument passes through either sequence without consuming a place
  * or breaking it. Grouped by speech first, because siblings mix every column
  * together in document order.
+ *
+ * Exported for the one caller outside layout: memorizing writes the marker into
+ * the block's text (see memory/answer.ts), and what it writes has to be what
+ * the sheet drew. A second implementation of the rule above would be a second
+ * place to get the alphabet wrong.
  */
-function markIndices(siblings: Argument[]): Map<string, number | null> {
+export function markIndices(siblings: Argument[]): Map<string, number | null> {
   const bySpeech = new Map<number, Argument[]>();
   for (const s of siblings) {
     const col = bySpeech.get(s.speech);

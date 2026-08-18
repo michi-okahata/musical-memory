@@ -5,7 +5,14 @@
  * later, so argument.css must stay last and its own rules must stay in the
  * order they're written in.
  *
+ * Stacking is shallow and worth stating once, since it is spread over four
+ * files: 1 is the sheet's own overlap (a cell showing a cursor, the rules
+ * between arguments), 2 is the chrome that the sheet scrolls under (the
+ * speech headers, the sidebar's head, the status line), and 10 is the keymap,
+ * which covers all of it.
+ *
  * tokens    every colour and metric, plus the dark theme
+ * common    the handful of shapes that appear in more than one file
  * app       the page and the zoom scale the sheet is drawn at
  * status    the status line pinned along the bottom
  * sidebar   the sheets in the round, down the left
@@ -16,6 +23,7 @@
  */
 
 @import "./tokens.css";
+@import "./common.css";
 @import "./app.css";
 @import "./status.css";
 @import "./sidebar.css";

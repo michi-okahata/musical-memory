@@ -192,7 +192,7 @@ export interface CommandContext {
   round: Round;
   /** The round this sheet belongs to, as a list to move around in. */
   sheets: SheetControls;
-  /** What the user has memorized: what `m` writes and what `A` reads. */
+  /** What the user has memorized: what `m` writes and what ⌘P reads. */
   memory: MemoryControls;
   /**
    * The current layout. Only the motions need it — where an argument *sits* is

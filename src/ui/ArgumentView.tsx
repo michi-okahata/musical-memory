@@ -21,6 +21,8 @@ interface ArgumentViewProps {
   argument: Argument;
   editing: boolean;
   dictionary: Dictionary;
+  /** The keymap in force — the editor lets a couple of its chords through. */
+  keys: Record<string, string>;
   /** As the user types, for the throttled write into the flow. */
   onChange: (text: string) => void;
   /** The editor is finished with: flush and leave edit mode. */
@@ -35,6 +37,7 @@ export function ArgumentView({
   argument,
   editing,
   dictionary,
+  keys,
   onChange,
   onDone,
   onSelect,
@@ -46,6 +49,7 @@ export function ArgumentView({
         className={ARGUMENT_CLASS}
         initialText={argument.text}
         dictionary={dictionary}
+        keys={keys}
         onChange={onChange}
         onDone={onDone}
       />

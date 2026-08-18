@@ -1,5 +1,5 @@
 import { useEffect, type Dispatch, type SetStateAction } from "react";
-import { keyOf, run } from "../editor/commands";
+import { keyOf, run, runsWhileEditing } from "../editor/commands";
 import type { CommandContext, EditorState } from "../editor/state";
 
 /**
@@ -18,24 +18,43 @@ export function useKeymap(
    */
   ctx: Omit<CommandContext, "flow"> & { flow: CommandContext["flow"] | null },
   setEditor: Dispatch<SetStateAction<EditorState>>,
+  /**
+   * Write buffered keystrokes into the flow now. Called before running a key
+   * that came from inside an open argument: typing is written through on a
+   * timer (see useTextBuffer), and a command that reads the argument's text —
+   * ⌘P does — must not read it as it stood a tick ago.
+   */
+  flushText: () => void,
+  /** Which key does what, the user's config read over the defaults. */
+  keys: Record<string, string>,
 ): void {
   const { state, flow, round, placed, speeches, sheets, memory } = ctx;
 
   useEffect(() => {
     if (!flow) return;
     const onKey = (e: KeyboardEvent) => {
-      if (state.editingId) return; // let the textarea own the keyboard
+      const key = keyOf(e);
       const tag = (e.target as HTMLElement).tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      // The textarea owns the keyboard while an argument is open, and the
+      // command line owns it while that is — except for the chords that are
+      // meant to work mid-sentence, and then only from inside an argument.
+      if (state.editingId || tag === "INPUT" || tag === "TEXTAREA") {
+        if (!state.editingId || !runsWhileEditing(key, keys)) return;
+        flushText();
+      }
 
       // Run the command here, not inside the setState updater: commands mutate
       // the flow, and StrictMode double-invokes updaters in development.
-      const next = run(keyOf(e), { state, flow, round, placed, speeches, sheets, memory });
+      const next = run(
+        key,
+        { state, flow, round, placed, speeches, sheets, memory },
+        keys,
+      );
       if (!next) return;
       e.preventDefault();
       setEditor(next);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [state, flow, round, placed, speeches, sheets, memory, setEditor]);
+  }, [state, flow, round, placed, speeches, sheets, memory, setEditor, flushText, keys]);
 }

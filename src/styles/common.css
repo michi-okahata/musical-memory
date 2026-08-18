@@ -1,0 +1,44 @@
+/* ---- the shapes that appear more than once ----------------------------
+   Two of them, and they are here rather than in the files that use them
+   because each is used in three places that have nothing else to do with one
+   another — the command line, the rename box and the keymap's search field are
+   the same field, and the fact that they are is not a fact about the status
+   line, the sidebar, or the panel.
+
+   Everything else that repeats stays where it repeats: the chips are the
+   status line's, the two glyph buttons are the sidebar's, and a rule dragged
+   out here for its second use would only put the reason for it further from
+   the thing it explains. */
+
+/* A field with no field around it. The box it sits in is already drawn — the
+   status line, a row of the sidebar, the keymap's header — so a border here
+   would be a second frame around the same thing, and the caret is the only
+   mark any of the three needs to say it is taking typing.
+
+   `font` and `color` inherit rather than being named, which is what makes one
+   rule serve all three: a form control takes neither by default, so this is
+   less a choice about how they look than the line that stops them opting out
+   of the type of whatever they were dropped into. */
+.app__cmd,
+.app__sheet-rename,
+.keymap__search {
+  min-width: 0;
+  border: 0;
+  outline: none;
+  padding: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+}
+
+/* A key, wherever one is written down: the empty sheet's two, the sidebar's
+   `:new`, the way out of the keymap. In the status line's mono, because that
+   is where a key is first seen written, and in the quietest ink — the sentence
+   around it is the part being read, and the key is what it points at.
+
+   The keymap's own are the exception and say so there: a panel that exists to
+   list keys can't set them in the ink it uses for asides. */
+kbd {
+  font-family: var(--font-mono);
+  color: var(--muted);
+}

@@ -59,8 +59,29 @@ export interface Copied {
  */
 export type Mark = "num" | "alpha" | "none";
 
-/** What an argument is marked with when nothing nearby suggests otherwise. */
-export const DEFAULT_MARK: Mark = "num";
+/**
+ * What an argument is marked with when nothing nearby suggests otherwise.
+ *
+ * `none`, because a number is a claim about a list and the argument that starts
+ * a column isn't one yet — flowing the first point of a speech shouldn't decide
+ * that everything under it will be counted. New arguments inherit from their
+ * same-speech neighbour (see `neighborMark`), so one `#` on a run marks
+ * everything added to it afterwards, and this decides only the argument that
+ * opens a column.
+ */
+export const DEFAULT_MARK: Mark = "none";
+
+/**
+ * How an argument whose mark can't be read comes out: a document written before
+ * marks existed, or a peer on a version that has one this build doesn't know.
+ *
+ * Deliberately not `DEFAULT_MARK`. Numbering used to be derived and
+ * unconditional, so a sheet from back then was drawn numbered all the way down,
+ * and reading it back as unmarked would quietly take the numbers off a flow
+ * nobody touched. The default governs what you write now; this governs what was
+ * already written.
+ */
+export const LEGACY_MARK: Mark = "num";
 
 /**
  * Whether an argument was read off evidence or simply spoken: a *card* is a

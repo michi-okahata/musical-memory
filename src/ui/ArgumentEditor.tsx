@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { completionAt, type Dictionary } from "../editor/completion";
+import { keyOf, runsWhileEditing } from "../editor/commands";
 
 /**
  * The text editor for one argument, with the suggested rest of the current
@@ -22,6 +23,11 @@ interface ArgumentEditorProps {
   className: string;
   initialText: string;
   dictionary: Dictionary;
+  /**
+   * The keymap in force, for the one question this asks of it: which chords
+   * are allowed through to the window while an argument is open.
+   */
+  keys: Record<string, string>;
   /** Called as the user types, for the throttled write into the flow. */
   onChange: (text: string) => void;
   /** Escape, Enter, or focus loss: flush and leave edit mode. */
@@ -32,6 +38,7 @@ export function ArgumentEditor({
   className,
   initialText,
   dictionary,
+  keys,
   onChange,
   onDone,
 }: ArgumentEditorProps): React.ReactElement {
@@ -90,8 +97,11 @@ export function ArgumentEditor({
         onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
         onBlur={onDone}
         onKeyDown={(e) => {
-          // The keymap must not see keys meant for the text.
-          e.stopPropagation();
+          // The keymap must not see keys meant for the text — except the few
+          // chords that are meant to work mid-sentence (see `runsWhileEditing`),
+          // which are let through to the window listener untouched. React
+          // delegates at the app root, so stopping here really does stop them.
+          if (!runsWhileEditing(keyOf(e), keys)) e.stopPropagation();
           if (e.key === "Tab" && suggestion) {
             e.preventDefault();
             accept();

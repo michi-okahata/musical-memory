@@ -17,6 +17,24 @@
   z-index: 2;
 }
 
+/* ---- the chip ---------------------------------------------------------
+   A small standing statement about the round or the keyboard, in a soft wash.
+   Both things on this line that make one are drawn by this rule, rather than
+   by two that agree: they are the same kind of statement and giving them a
+   second visual language would only mean two things to learn.
+
+   A wash rather than an outline — one more hairline box on a screen made of
+   hairlines reads as structure. */
+.app__mode,
+.app__flag {
+  flex: none;
+  white-space: nowrap;
+  padding: calc(1px * var(--zoom)) calc(5px * var(--zoom));
+  border-radius: calc(2px * var(--zoom));
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
 /* ---- the mode ---------------------------------------------------------
    Which mode the keyboard is in, first on the line and always there. In a
    modal editor that is the one thing the screen owes you unasked: every key
@@ -27,13 +45,7 @@
    enough for the longest thing it says, so the count beside it doesn't shuffle
    left and right as you go in and out of a mode. */
 .app__mode {
-  flex: none;
   min-width: 8ch;
-  white-space: nowrap;
-  padding: calc(1px * var(--zoom)) calc(4px * var(--zoom));
-  border-radius: calc(2px * var(--zoom));
-  color: var(--accent);
-  background: var(--accent-soft);
   user-select: none;
 }
 
@@ -50,22 +62,10 @@
    you are reading it on: who wrote it, how it's marked, whether it's
    memorized, the pinned speech, the zoom. Not modes — nothing here changes
    what a key does, which is why they are at the other end of the line from
-   the thing that does.
-
-   The same soft chip the mode wears, deliberately: they are the same kind of
-   small standing statement, and giving them a second visual language would
-   only mean two things to learn. A wash rather than an outline — one more
-   hairline box on a screen made of hairlines reads as structure. */
+   the thing that does — which is all that separates them from it. The chip
+   itself is the mode's, above. */
 .app__flag {
   margin-left: auto;
-  /* Never wraps and never shrinks — the line is mostly empty now that the
-     hints have moved to `:?`, and what is left on it is all state. */
-  flex: none;
-  white-space: nowrap;
-  padding: calc(1px * var(--zoom)) calc(5px * var(--zoom));
-  border-radius: calc(2px * var(--zoom));
-  color: var(--accent);
-  background: var(--accent-soft);
 }
 
 /* Several can be on at once (focus and zoom, say); only the first pushes. */
@@ -100,14 +100,23 @@
   letter-spacing: 0.08em;
 }
 
-/* Connected, and quietly so: a filled dot, in the accent, no animation. The
-   states worth noticing are the ones where the room isn't there. */
-.app__room-dot {
+/* The line's two dots: the room's, and one per person in it. The same shape
+   deliberately — a filled circle is this line's word for "somebody is there",
+   and the room's own is the first and largest instance of it. What they are
+   filled with is what differs, and it is the whole of what they say.
+
+   Connected, and quietly so: no animation. The states worth noticing are the
+   ones where the room isn't there. */
+.app__room-dot,
+.app__peer-dot {
+  flex: none;
   width: calc(5px * var(--zoom));
   height: calc(5px * var(--zoom));
   border-radius: 50%;
+}
+
+.app__room-dot {
   background: var(--accent);
-  flex: none;
 }
 
 .app__room.is-connecting .app__room-dot,
@@ -205,13 +214,6 @@
   color: var(--argument-fg);
 }
 
-.app__peer-dot {
-  width: calc(5px * var(--zoom));
-  height: calc(5px * var(--zoom));
-  border-radius: 50%;
-  flex: none;
-}
-
 /* The command line, sharing the status line's type so opening it reads as the
    line changing mode rather than a box appearing over it. */
 .app__cmdline {
@@ -221,14 +223,12 @@
   color: var(--argument-fg);
 }
 
+/* The field itself is in common.css. The hairline of padding is this one's
+   own: at the left edge of the line the caret would otherwise sit half under
+   the `:` that opened it. */
 .app__cmd {
   flex: 1;
-  border: 0;
-  outline: none;
-  background: none;
-  font: inherit;
-  color: inherit;
-  padding: 0 1px;
+  padding: 0 calc(1px * var(--zoom));
 }
 
 /* The pending count, echoed back so a half-typed `1` of `10j` is visible. */
@@ -236,14 +236,4 @@
   min-width: 2ch;
   font-variant-numeric: tabular-nums;
   color: var(--cursor);
-}
-
-/* The memory sheet, flagged. In the accent rather than the flags' grey: every
-   other flag says something about how you are looking at the round, and this
-   one says you are not looking at the round. */
-.app__flag.is-memory {
-  color: var(--accent);
-  background: var(--accent-soft);
-  border-radius: calc(2px * var(--zoom));
-  padding: calc(1px * var(--zoom)) calc(5px * var(--zoom));
 }

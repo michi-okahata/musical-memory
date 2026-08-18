@@ -59,6 +59,17 @@ export async function readImported(): Promise<Block[]> {
 }
 
 /**
+ * `~/.flow/config.json` as text, or null where there is no file — which is
+ * every machine until somebody writes one.
+ *
+ * Text, because what a config may say is the keymap's question and not this
+ * layer's: see editor/config.ts, which is the only thing that reads it.
+ */
+export async function readConfigFile(): Promise<string | null> {
+  return (await invoke<string | null>("store_config")) ?? null;
+}
+
+/**
  * Memorize `answers` as the answers to `argument` in `position`, replacing
  * whatever was under that key there. No answers forgets it.
  */

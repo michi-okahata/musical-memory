@@ -37,7 +37,7 @@ const NONE: Block[] = [];
  * changes.
  *
  * Lookup happens on every cursor movement and every keystroke — the status line
- * asks what `A` would insert, and the answer has to be there before the next
+ * asks what ⌘P would insert, and the answer has to be there before the next
  * character is typed. A folder of files is a hundred thousand blocks, so
  * anything the lookup does *per block* is done a hundred thousand times per
  * keypress. This exists to make the two things it used to do per block —
@@ -71,7 +71,7 @@ function file(into: Map<string, Block[]>, at: string, block: Block): void {
 /** What there is to recall against the argument the cursor is on. */
 export interface Recall {
   /**
-   * The block `A` would insert, or null when there is nothing to insert —
+   * The block ⌘P would insert, or null when there is nothing to insert —
    * which is either because nothing matched or because too much did.
    */
   block: Block | null;
@@ -89,7 +89,7 @@ const NOTHING: Recall = { block: null, among: 0 };
 /**
  * What answers the argument in front of you: how well a block matches first,
  * and only then where it came from. A file's match counts only when it is the
- * only one — `A` inserts text, and a backfile has thirty "AT: Politics". Two
+ * only one — ⌘P inserts text, and a backfile has thirty "AT: Politics". Two
  * files holding the same block word for word are one answer, not two.
  */
 export function recall(

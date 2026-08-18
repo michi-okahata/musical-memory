@@ -1,7 +1,7 @@
 import { Round } from "../model/round";
 import {
-  DEFAULT_MARK,
   DEFAULT_SUPPORT,
+  LEGACY_MARK,
   type Argument,
   type Mark,
   type Support,
@@ -148,7 +148,7 @@ function decodeArguments(value: unknown): ArgumentJson[] {
       typeof argument.speech === "number" && argument.speech >= 0
         ? Math.floor(argument.speech)
         : 0,
-    mark: isMark(argument.mark) ? argument.mark : DEFAULT_MARK,
+    mark: isMark(argument.mark) ? argument.mark : LEGACY_MARK,
     support: isSupport(argument.support) ? argument.support : DEFAULT_SUPPORT,
     children: decodeArguments(argument.children),
   }));

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Points macOS at the "flow" icon inside Resources/Assets.car, which is
+	     the layered Icon Composer icon. macOS 26 prefers CFBundleIconName over
+	     CFBundleIconFile, so this wins over the flat icon.icns that the Tauri
+	     bundler writes, while that stays as the fallback on older systems.
+	     Tauri merges this file into the generated Info.plist automatically. -->
+	<key>CFBundleIconName</key>
+	<string>flow</string>
+</dict>
+</plist>
