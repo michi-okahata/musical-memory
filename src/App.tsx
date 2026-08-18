@@ -414,8 +414,11 @@ function App() {
       case "forget":
         memory.forget();
         break;
+      case "config":
+        config.seed();
+        break;
     }
-  }, [actions, flow, placed, sheets, activeSheet, open, sheetControls, library, memory, sheetActions, speeches]);
+  }, [actions, config, flow, placed, sheets, activeSheet, open, sheetControls, library, memory, sheetActions, speeches]);
 
   const renderArgument = (arg: Argument) => (
     <ArgumentView
@@ -511,6 +514,8 @@ function App() {
         // would say: a key that silently does nothing is indistinguishable
         // from a key you mistyped.
         configError={config.problems[0] ?? null}
+        // And what went right: `:config` wrote a file, or found one there.
+        configNote={config.note}
         authorLabel={authorLabel}
         // Every one of these takes the *latest* state rather than the `editor`
         // this render closed over — see CommandLine.tsx. Hence also the

@@ -83,6 +83,8 @@ interface StatusLineProps {
    * is what you are about to go and do anyway.
    */
   configError: string | null;
+  /** What `:config` did, if it has been asked. */
+  configNote: string | null;
   /** What last worked: what an import read in, what a `:forget` dropped. */
   memoryNote: string | null;
   /** Whether the sheet showing is what you have memorized rather than the round. */
@@ -141,6 +143,7 @@ export function StatusLine({
   among,
   memoryError,
   configError,
+  configNote,
   memoryNote,
   memory,
   peers,
@@ -252,6 +255,14 @@ export function StatusLine({
       {configError !== null && (
         <span className="app__file is-error" title={configError}>
           config
+        </span>
+      )}
+
+      {/* What `:config` did. Not an error, so not the error chip: writing the
+          file and finding one already there are both the command working. */}
+      {configNote !== null && (
+        <span className="app__file" title={configNote}>
+          {configNote}
         </span>
       )}
 

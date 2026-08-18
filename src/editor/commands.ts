@@ -83,7 +83,9 @@ export type SessionCommand =
   /** Read a folder of CardMirror files in as blocks. */
   | { kind: "import" }
   /** Drop everything a folder of files put there. */
-  | { kind: "forget" };
+  | { kind: "forget" }
+  /** Write `~/.flow/config.json` out with the defaults in it, if there is none. */
+  | { kind: "config" };
 
 /**
  * Read a session command, or null if the line says something else (a speech
@@ -145,6 +147,12 @@ export function parseSessionCommand(text: string): SessionCommand | null {
       return { kind: "import" };
     case "forget":
       return { kind: "forget" };
+
+    // ---- the keys. A file you edit by hand needs a file to edit, and this
+    // writes one — the defaults, spelled out, as a starting point. Typed
+    // rather than automatic: see `defaultConfigText`.
+    case "config":
+      return { kind: "config" };
 
     default:
       return null;

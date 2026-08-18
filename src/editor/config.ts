@@ -101,6 +101,24 @@ function isObject(value: unknown): value is Record<string, unknown> {
 }
 
 /**
+ * The defaults, as a config file says them — what `:config` writes.
+ *
+ * Here rather than anywhere else because this is the file that knows the
+ * format, and a seed written by a second understanding of it is a seed that
+ * can be wrong about the thing it is demonstrating.
+ *
+ * What it writes is a *snapshot*, and the reason `:config` is a command you
+ * type rather than something that happens at first launch: a file naming every
+ * key stops tracking the defaults the moment one of them moves, and doing that
+ * to everybody automatically would make the layering above pointless for
+ * everybody. Asked for, it is a starting point; written silently, it is a copy
+ * of an old keymap nobody remembers agreeing to.
+ */
+export function defaultConfigText(): string {
+  return `${JSON.stringify({ keys: DEFAULT_KEYS }, null, 2)}\n`;
+}
+
+/**
  * Every key `name` is on, in the order the keymap lists them — for the help
  * sheet, which has to show the keys somebody actually has rather than the ones
  * this app shipped with (see Keymap.tsx).

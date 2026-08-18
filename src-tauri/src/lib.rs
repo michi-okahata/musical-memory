@@ -68,6 +68,7 @@ pub fn run() {
             files::files_write,
             files::files_remove,
             store::store_config,
+            store::store_seed_config,
             store::store_memorized,
             store::store_imported,
             store::store_memorize,

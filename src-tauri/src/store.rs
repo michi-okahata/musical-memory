@@ -270,6 +270,38 @@ pub fn store_config(app: tauri::AppHandle) -> Result<Option<String>, String> {
     read_config(&config_in(&home)?)
 }
 
+/// Write `text` to `~/.flow/config.json`, but only where there is no file —
+/// answering `true` when it wrote one and `false` when there was already one
+/// there. Never an overwrite: a config is somebody's own file, and the one
+/// thing a "give me a starting point" command must not do is take away the
+/// starting point they have already edited.
+///
+/// `create_new` is the whole of the "once". It is a single syscall that fails
+/// if the path exists, so the check and the create cannot come apart — an
+/// `exists()` here followed by a write would leave a window between the two,
+/// which is exactly long enough to clobber a file written in it.
+#[tauri::command]
+pub fn store_seed_config(app: tauri::AppHandle, text: String) -> Result<bool, String> {
+    let home = app
+        .path()
+        .home_dir()
+        .map_err(|e| format!("no home directory: {e}"))?;
+    write_config(&config_in(&home)?, &text)
+}
+
+/// The write itself, so the test can reach it without an `AppHandle`.
+fn write_config(path: &Path, text: &str) -> Result<bool, String> {
+    use std::io::Write;
+    match fs::OpenOptions::new().write(true).create_new(true).open(path) {
+        Ok(mut file) => file
+            .write_all(text.as_bytes())
+            .map(|()| true)
+            .map_err(|e| format!("{}: {e}", path.display())),
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => Ok(false),
+        Err(e) => Err(format!("{}: {e}", path.display())),
+    }
+}
+
 #[tauri::command]
 pub fn store_memorized(app: tauri::AppHandle) -> Result<Vec<Block>, String> {
     let path = path(&app)?;
@@ -449,7 +481,7 @@ pub fn store_forget_imports(app: tauri::AppHandle) -> Result<(), String> {
 mod tests {
     use super::{
         blocks, config_in, forget_imports, import, memorize, open, read_config, rename_position,
-        steps_of, store_in, Imported, ImportedFile, MIGRATIONS,
+        steps_of, store_in, write_config, Imported, ImportedFile, MIGRATIONS,
     };
 
     /// A store of our own, named after the test using it.
@@ -780,6 +812,22 @@ mod tests {
             read_config(&config).unwrap().as_deref(),
             Some(r#"{"keys":{"g":"answer"}}"#)
         );
+    }
+
+    #[test]
+    fn seeds_a_config_once_and_never_overwrites_one() {
+        let home = home("seed");
+        let config = config_in(&home).unwrap();
+
+        // The first ask writes it and says so.
+        assert!(write_config(&config, r#"{"keys":{}}"#).unwrap());
+        assert_eq!(read_config(&config).unwrap().as_deref(), Some(r#"{"keys":{}}"#));
+
+        // The second is refused rather than failing: asking twice is a thing
+        // people do, and the answer is "there is one already", not an error.
+        assert!(!write_config(&config, r#"{"keys":{"g":"answer"}}"#).unwrap());
+        // And what was there is untouched — the point of the whole exercise.
+        assert_eq!(read_config(&config).unwrap().as_deref(), Some(r#"{"keys":{}}"#));
     }
 
     /// Every launch after the first runs this too, and it must be a no-op.

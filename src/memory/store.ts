@@ -70,6 +70,14 @@ export async function readConfigFile(): Promise<string | null> {
 }
 
 /**
+ * Write `text` to `~/.flow/config.json` where there is no file yet, answering
+ * whether it wrote one. Never an overwrite — see `store_seed_config`.
+ */
+export async function seedConfigFile(text: string): Promise<boolean> {
+  return await invoke<boolean>("store_seed_config", { text });
+}
+
+/**
  * Memorize `answers` as the answers to `argument` in `position`, replacing
  * whatever was under that key there. No answers forgets it.
  */
