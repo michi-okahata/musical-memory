@@ -86,7 +86,7 @@ export function useConfig(): Configuration {
       return;
     }
     seedConfigFile(defaultConfigText()).then(
-      (wrote) => setNote(wrote ? "wrote ~/.flow/config.json" : "~/.flow/config.json is already there"),
+      (wrote) => setNote(wrote ? "wrote ~/.flow/config.json" : "~/.flow/config.json already exists"),
       (reason: unknown) => setConfig((c) => ({ ...c, problems: [String(reason)] })),
     );
   }, []);
