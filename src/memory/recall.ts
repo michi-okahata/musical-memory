@@ -24,6 +24,30 @@ export function samePosition(a: string, b: string): boolean {
 }
 
 /**
+ * What `block` would complete `typed` to, or null where it would not touch it.
+ *
+ * Only ever *forwards*. `loose` matches shorthand that drifted in either
+ * direction — you wrote more than you memorized, or less — and only the second
+ * of those is a completion. Finding the block for "neg flex" under the "neg
+ * flex bad" you typed and then writing "neg flex" back over it would delete a
+ * word you had just said out loud on purpose; the block being shorter is not
+ * evidence that you meant less. So the rule is the narrow one: the block's key
+ * has to spell out everything the argument does and keep going.
+ *
+ * Compared on keys, so the case and spacing you typed don't decide it, but
+ * what lands is `block.argument` — the form you memorized, which is the one
+ * worth having on the sheet.
+ */
+export function completes(
+  typed: string,
+  block: Pick<Block, "key" | "argument">,
+): string | null {
+  const key = argumentKey(typed);
+  if (!key || block.key === key) return null;
+  return block.key.startsWith(key) ? block.argument : null;
+}
+
+/**
  * Below this many characters, only an exact match counts. A two-character
  * argument is a prefix of half the file, and inserting four answers is not the
  * kind of thing to do on that evidence.

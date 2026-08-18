@@ -68,6 +68,22 @@ export interface EditorState {
    * never do it.
    */
   yanked: Copied[] | null;
+  /**
+   * How many times the argument under an open editor has been rewritten by
+   * something other than typing — which today is `recall` finishing it against
+   * the block it found.
+   *
+   * A count rather than a flag because it is read as a *change*: the editor
+   * seeds itself from the document once, on mount, so the only way to show it
+   * text it did not type is to mount it again, and App keys the editor on this
+   * to do exactly that (see App.tsx). A flag would have to be cleared by
+   * somebody, and the somebody would be a render.
+   *
+   * Bumped only when the text really moved. A remount costs the caret its
+   * place, which is a fair price for text appearing and no price at all worth
+   * paying for a recall that completed nothing.
+   */
+  rewrites: number;
   /** Whether the list of sheets is showing. */
   sidebar: boolean;
   /**
@@ -119,6 +135,7 @@ export const initialEditorState: EditorState = {
   command: null,
   selectAnchor: null,
   yanked: null,
+  rewrites: 0,
   sidebar: true,
   memory: false,
   help: false,
@@ -152,7 +169,15 @@ export interface SheetControls {
  * is not a state transition (see useMemory.ts).
  */
 export interface MemoryControls {
-  recall: (argument: string, position: string) => { block: { answers: string[] } | null };
+  /**
+   * The block answering an argument. Structural rather than a `Block`, and
+   * exactly the three fields the keymap uses: the answers it inserts, and the
+   * key and argument `completes` weighs to finish what you typed.
+   */
+  recall: (
+    argument: string,
+    position: string,
+  ) => { block: { answers: string[]; key: string; argument: string } | null };
   keep: (position: string, argument: string, answers: string[]) => void;
 }
 

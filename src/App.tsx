@@ -69,7 +69,7 @@ function App() {
     actions,
   } = useSession(seedSample);
   const [editor, setEditor] = useState(initialEditorState);
-  const { cursorId, editingId, count, focus, command, selectAnchor, sidebar, help, zoom } =
+  const { cursorId, editingId, count, focus, command, selectAnchor, sidebar, help, zoom, rewrites } =
     editor;
 
   // Where the round is kept. Bound by `:open` or the first `:save`, and from
@@ -263,9 +263,14 @@ function App() {
   // Every way into edit mode passes through here — the keymap's creating keys,
   // `i`, a double click — so this is the one place that can tell the buffer
   // which text the editor was seeded with. See `beginText`.
+  //
+  // `rewrites` is in here for the same reason: a recall that finished the
+  // argument wrote text the buffer never saw, and a baseline still holding
+  // what you typed would measure your next keystroke against it and undo the
+  // completion a character at a time.
   useEffect(() => {
     if (editingId) beginText(editingId);
-  }, [editingId, beginText]);
+  }, [editingId, rewrites, beginText]);
 
   // Leave edit mode, making sure the last keystrokes are in the doc first.
   const stopEditing = useCallback(() => {
@@ -420,11 +425,19 @@ function App() {
     }
   }, [actions, config, flow, placed, sheets, activeSheet, open, sheetControls, library, memory, sheetActions, speeches]);
 
-  const renderArgument = (arg: Argument) => (
+  const renderArgument = (arg: Argument) => {
+    const editing = arg.id === editingId;
+    return (
     <ArgumentView
-      key={arg.id === editingId ? `edit-${arg.id}` : arg.id}
-      argument={arg}
-      editing={arg.id === editingId}
+      // `rewrites` remounts the editor when something other than typing has
+      // rewritten the argument under it: the seed below is read once, on
+      // mount, so a live editor would otherwise go on showing what you typed.
+      key={editing ? `edit-${arg.id}-${rewrites}` : arg.id}
+      // Seeded from the document rather than the layout, which trails it by a
+      // tick — Loro delivers its change events asynchronously, so a completion
+      // written a moment ago is in the flow and not yet in `arg`.
+      argument={editing && flow?.has(arg.id) ? { ...arg, text: flow.textOf(arg.id) } : arg}
+      editing={editing}
       dictionary={dictionary}
       keys={config.keys}
       onChange={(text) => queueText(arg.id, text)}
@@ -439,7 +452,8 @@ function App() {
         }))
       }
     />
-  );
+    );
+  };
 
   return (
     // The zoom multiplier is handed to the stylesheet here and read back out of

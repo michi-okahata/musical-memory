@@ -2,6 +2,7 @@ import { type Mark, type Speech } from "../model/types";
 import { type Anchor } from "../model/flow";
 import { markerOf } from "../layout/grid";
 import { decodeAnswer, encodeAnswer } from "../memory/answer";
+import { completes } from "../memory/recall";
 import {
   columnOrder,
   moveCursor,
@@ -489,15 +490,27 @@ const toggleMemory: Command = ({ state, sheets }) => ({
 const recall: Command = (ctx) => {
   const { state, flow, speeches, memory, sheets } = ctx;
   if (!state.cursorId || !flow.has(state.cursorId)) return state;
-  const { block } = memory.recall(flow.textOf(state.cursorId), positionOf(sheets));
+  // Read once and reused: the argument as it stands is both what the block is
+  // looked up by and what the completion is measured against, and asking the
+  // document twice would let the two disagree.
+  const typed = flow.textOf(state.cursorId);
+  const { block } = memory.recall(typed, positionOf(sheets));
   if (!block || block.answers.length === 0) return state;
 
   const speech = counted(ctx) ?? flow.speechOf(state.cursorId) + 1;
   if (speech >= speeches.length) return state; // nothing past the last speech
 
   const parent = state.cursorId;
+  // The argument you were writing, finished — see `completes`, which decides
+  // when there is anything to finish. Null far more often than not: an exact
+  // match has nothing to add, and one you wrote past has nothing to take away.
+  const completed = completes(typed, block);
   let first: string | null = null;
   flow.batch(() => {
+    // Inside the batch with the answers, so one undo takes back the whole of
+    // what one keypress did rather than leaving the argument rewritten under
+    // answers that have gone.
+    if (completed !== null) flow.setText(parent, completed);
     for (const line of block.answers) {
       // Marked as the block says, not as the neighbouring column says: a block
       // is a list you wrote down once, and landing it beside a lettered aside
@@ -511,8 +524,11 @@ const recall: Command = (ctx) => {
   // Except mid-sentence, where the cursor is what the open editor is on: moving
   // it to the answers would leave the two pointing at different arguments, and
   // you are not finished with this one — that is why you are still typing it.
-  if (state.editingId) return { ...state, count: null };
-  return { ...state, cursorId: first ?? state.cursorId, count: null };
+  // Bumped only when the text actually changed, because it costs a remount of
+  // whatever editor is open — see `rewrites`.
+  const rewrites = completed !== null ? state.rewrites + 1 : state.rewrites;
+  if (state.editingId) return { ...state, rewrites, count: null };
+  return { ...state, cursorId: first ?? state.cursorId, rewrites, count: null };
 };
 
 /**
